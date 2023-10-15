@@ -39,7 +39,8 @@ private:
 	CListBox lstDuty_;
 	CComboBox cboDuty_;
 	CComboBox cboCurve_;
-	WavGenerator::ToneData toneData_;
+	CEdit txtNoise_;
+	ToneData toneData_;
 
 	afx_msg void OnBnClickedBtnPlay();
 	afx_msg void OnBnClickedBtnDutyRatioAdd();
@@ -50,4 +51,8 @@ private:
 
 	HWAVEOUT hWaveOut_;
 	std::vector<int16_t> pcmBuffer_;
+public:
+	CEdit txtDutySwictTiming_;
+	afx_msg void OnEnChangeTxtNoise();
+	afx_msg void OnEnChangeTxtDutySwitchTiming();
 };

@@ -7,6 +7,8 @@
 #include "Mml2WavApp.h"
 #include "Mml2WavDlg.h"
 
+#include "FixFloat.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
@@ -40,6 +42,12 @@ CMml2WavApp theApp;
 
 BOOL CMml2WavApp::InitInstance()
 {
+	CFixFloat<int> flt32(0.5);
+	auto tmp = flt32 * 0.5;
+	float ftmp = tmp;
+	double dtmp = tmp;
+
+
 	// アプリケーション マニフェストが visual スタイルを有効にするために、
 	// ComCtl32.dll Version 6 以降の使用を指定する場合は、
 	// Windows XP に InitCommonControlsEx() が必要です。さもなければ、ウィンドウ作成はすべて失敗します。

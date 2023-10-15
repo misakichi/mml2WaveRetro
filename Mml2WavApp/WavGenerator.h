@@ -3,48 +3,53 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include "FixFloat.h"
 
+//波形タイプ
+enum class EWaveCurveType {
+	Rectangle,
+	Triangle,
+	Saw,
+	Sin,
+	Noise,
+};
+
+//音色データ
+struct ToneData {
+	EWaveCurveType curve = EWaveCurveType::Rectangle;
+	int cycle = 0;
+	int randomRange = 0;
+	std::vector<int> dutyRatio; //通常の波形が50(%)
+};
+struct NoteCommand
+{
+	int toneOffset;		//tone offset from A0.
+	int length;			//NoteLengthResolutio単位の長さ
+	uint8_t Slur;		//前の音と接続する
+	uint8_t waveCurve;
+	int bpm;
+	int vol;
+};
+
+template<typename CalcT=CFixFloat<int64_t,16>>
 class WavGenerator
 {
 public:
+	using CalcType = CalcT;
 	WavGenerator();
 	//内部で扱う音の長さの分解能(単位)
 	static constexpr int NoteLengthResolutio = 256; //ex. 256=256分音符まで
 
-	//波形タイプ
-	enum class EWaveCurveType {
-		Rectangle,
-		Triangle,
-		Saw,
-		Sin,
-		Noise,
-	};
-
-	//音色データ
-	struct ToneData {
-		EWaveCurveType curve = EWaveCurveType::Rectangle;
-		std::vector<int> dutyRatio; //通常の波形が50(%)
-	};
-	struct NoteCommand
-	{
-		int toneOffset;		//tone offset from A0.
-		int length;			//NoteLengthResolutio単位の長さ
-		uint8_t Slur;		//前の音と接続する
-		uint8_t waveCurve;
-		int bpm;
-		int vol;
-	};
-
-	std::vector<NoteCommand> compileMml(const char* mml);
-	void addCommand(const NoteCommand& command);
-	void addCommand(std::vector<NoteCommand> commands);
-	void setTone(int no, const ToneData& tone);
-	bool ready(uint32_t sampleRate);
-	std::vector<int16_t> generate(int samples, bool loop);
+	inline void setVolumeMax(uint32_t volumeMax) { volumeMax_ = volumeMax; }
+	inline std::vector<NoteCommand> compileMml(const char* mml);
+	inline void addCommand(const NoteCommand& command);
+	inline void addCommand(std::vector<NoteCommand> commands);
+	inline void setTone(int no, const ToneData& tone);
+	inline bool ready(uint32_t sampleRate);
+	inline std::vector<int16_t> generate(int samples, bool loop);
 private:
 	static constexpr int SinTableResolution = 100;
-	static constexpr int SinTableValueResolution = 10000;
-	int16_t sinTable_[360 * SinTableResolution];	//0.01度刻みのsinテーブル、結果は10000倍値
+	CalcType sinTable_[360 * SinTableResolution];	//0.01度刻みのsinテーブル、結果は10000倍値
 
 	std::string mml_;
 	std::unordered_map<int, ToneData> tones_;
@@ -75,10 +80,25 @@ private:
 	struct PlayStatus {
 		std::vector<RecentLength> recentLength;
 		int commandIdx;
+
+		int toneIndex;
+		int dutyIndex;
+
 		int noteSamples;	//現在処理中のコマンドのサンプル数
 		int noteProcedSamples; //処理済み
+
+		bool toneOff;
+		CalcType baseFreq;
+
+		int waveStep; //波形のプラス側かマイナス側か(0=+ 1=-)
+		CalcType waveFreqDiv2; //波形の半分プラマイの片方側分のサンプル数
+		int waveDiv2InSample; //波形の半分プラマイの片方側分がどれだけ処理されたか
 	};
 	PlayStatus status_;
 	uint32_t sampleRate_;
+	uint32_t volumeMax_ = 255; //Max of "V" command value
+
+
 };
 
+#include "WavGenerator.inl"

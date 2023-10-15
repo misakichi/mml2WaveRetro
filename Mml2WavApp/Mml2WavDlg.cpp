@@ -67,6 +67,8 @@ void CMml2WavDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_LST_DUTY_RATIO, lstDuty_);
 	DDX_Control(pDX, IDC_CBO_DUTY_RATIO, cboDuty_);
 	DDX_Control(pDX, IDC_CBO_CURVE, cboCurve_);
+	DDX_Control(pDX, IDC_TXT_NOISE, txtNoise_);
+	DDX_Control(pDX, IDC_TXT_DUTY_SWITCH_TIMING, txtDutySwictTiming_);
 }
 
 BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
@@ -77,6 +79,8 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BTN_DUTY_RATIO_ADD, &CMml2WavDlg::OnBnClickedBtnDutyRatioAdd)
 	ON_BN_CLICKED(IDC_BTN_DUTY_RATIO_DEL, &CMml2WavDlg::OnBnClickedBtnDutyRatioDel)
 	ON_CBN_SELCHANGE(IDC_CBO_CURVE, &CMml2WavDlg::OnCbnSelchangeCboCurve)
+	ON_EN_CHANGE(IDC_TXT_NOISE, &CMml2WavDlg::OnEnChangeTxtNoise)
+	ON_EN_CHANGE(IDC_TXT_DUTY_SWITCH_TIMING, &CMml2WavDlg::OnEnChangeTxtDutySwitchTiming)
 END_MESSAGE_MAP()
 
 
@@ -119,6 +123,8 @@ BOOL CMml2WavDlg::OnInitDialog()
 	}
 	cboCurve_.SetCurSel(0);
 	cboDuty_.SetCurSel(49);
+	txtNoise_.SetWindowText("0");
+	txtDutySwictTiming_.SetWindowText("0");
 
 	return TRUE;  // フォーカスをコントロールに設定した場合を除き、TRUE を返します。
 }
@@ -196,7 +202,7 @@ void CALLBACK waveOutCallbackProc(
 
 void CMml2WavDlg::OnBnClickedBtnPlay()
 {
-	WavGenerator* generator = new WavGenerator();;
+	WavGenerator<>* generator = new WavGenerator<>();
 	CString mml;
 	txtMml_.GetWindowText(mml);
 	auto commands = generator->compileMml(mml);
@@ -226,7 +232,7 @@ void CMml2WavDlg::OnBnClickedBtnPlay()
 
 	WAVEHDR header = {};
 	header.lpData = (char*)pcmBuffer_.data();
-	header.dwBufferLength = pcmBuffer_.size() * sizeof(int16_t);
+	header.dwBufferLength = (DWORD)(pcmBuffer_.size() * sizeof(int16_t));
 	header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
 	header.dwLoops = 1;
 
@@ -278,3 +284,19 @@ void CMml2WavDlg::OnBnClickedBtnDutyRatioDel()
 	RefreshDutyList();
 }
 
+
+
+void CMml2WavDlg::OnEnChangeTxtNoise()
+{
+	CString str;
+	txtNoise_.GetWindowText(str);
+	toneData_.randomRange = atoi(str);
+}
+
+
+void CMml2WavDlg::OnEnChangeTxtDutySwitchTiming()
+{
+	CString str;
+	txtDutySwictTiming_.GetWindowText(str);
+	toneData_.cycle = atoi(str);
+}
