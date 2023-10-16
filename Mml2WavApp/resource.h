@@ -16,8 +16,9 @@
 #define IDC_BTN_PLAY                    1005
 #define IDC_CBO_CURVE                   1006
 #define IDC_TXT_NOISE                   1007
-#define IDC_TXT_NOISE2                  1008
 #define IDC_TXT_DUTY_SWITCH_TIMING      1008
+#define IDC_BTN_PLAY2                   1009
+#define IDC_BTN_OUTPUT                  1009
 
 // Next default values for new objects
 // 

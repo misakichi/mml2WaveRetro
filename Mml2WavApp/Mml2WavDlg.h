@@ -35,24 +35,32 @@ protected:
 
 	DECLARE_MESSAGE_MAP()
 private:
+	struct WavData
+	{
+		WAVEFORMATEX format;
+		std::vector<int16_t> data;
+	};
+
 	CEdit txtMml_;
 	CListBox lstDuty_;
 	CComboBox cboDuty_;
 	CComboBox cboCurve_;
 	CEdit txtNoise_;
 	ToneData toneData_;
+	CEdit txtDutySwictTiming_;
 
 	afx_msg void OnBnClickedBtnPlay();
 	afx_msg void OnBnClickedBtnDutyRatioAdd();
 	afx_msg void OnBnClickedBtnDutyRatioDel();
+	afx_msg void OnEnChangeTxtNoise();
+	afx_msg void OnEnChangeTxtDutySwitchTiming();
+	afx_msg void OnBnClickedBtnOutput();
 
 	void RefreshDutyList();
+	bool genWavData(WavData& dest);
 
 
 	HWAVEOUT hWaveOut_;
 	std::vector<int16_t> pcmBuffer_;
-public:
-	CEdit txtDutySwictTiming_;
-	afx_msg void OnEnChangeTxtNoise();
-	afx_msg void OnEnChangeTxtDutySwitchTiming();
+
 };

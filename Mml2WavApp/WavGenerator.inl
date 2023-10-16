@@ -12,167 +12,7 @@ inline WavGenerator<CalcT>::WavGenerator()
 }
 
 template<typename CalcT>
-inline std::vector<NoteCommand> WavGenerator<CalcT>::compileMml(const char* mml)
-{
-	std::vector<NoteCommand> commands;
-	auto end = mml + strlen(mml);
-	auto p = mml;
-	
-	struct State {
-		int oct = 4;
-		uint32_t v;
-		int curve = 0;
-		int len = 4;
-		int bpm = 120;
-	} state;
-	state.v = volumeMax_;
-
-	auto getNum = [&p]()
-	{
-		char num[32] = {};
-		auto dst = num;
-		while (*p >= '0' && *p <= '9')
-		{
-			*dst++ = *p++;
-		}
-		return atoi(num);
-	};
-
-	while(p<end)
-	{
-		auto c = *p++;
-		if ((c >= 'A' && c <= 'G')||c=='R')
-		{
-			int offset = state.oct * 12;
-			switch (c)
-			{
-			case 'A': offset += EToneScale::ToneScaleA; break;
-			case 'B': offset += EToneScale::ToneScaleB; break;
-			case 'C': offset += EToneScale::ToneScaleC; break;
-			case 'D': offset += EToneScale::ToneScaleD; break;
-			case 'E': offset += EToneScale::ToneScaleE; break;
-			case 'F': offset += EToneScale::ToneScaleF; break;
-			case 'G': offset += EToneScale::ToneScaleG; break;
-			case 'R': offset = -1;
-			}
-
-
-			auto opt = *p;
-			if (offset >= 0)
-			{
-				if (opt == '#' || opt == '+')
-				{
-					++p;
-					offset++;
-				}
-				else if (opt == '-')
-				{
-					++p;
-					offset--;
-				}
-			}
-			assert(offset==-1 || offset >= EToneScale::ToneScaleA);
-			if (offset > 0)
-				offset -= EToneScale::ToneScaleA;
-
-			int len = getNum();
-			if (len == 0)
-				len = state.len;
-
-			len = NoteLengthResolutio / len;
-
-			int addPeriod = 0;
-			if (*p == '.')
-			{
-				p++;
-				len += len/2;
-			}
-			int slur = 0;
-
-			NoteCommand newCmd;
-			newCmd.toneOffset = offset;
-			newCmd.length = len;
-			newCmd.Slur = slur;
-			newCmd.vol = state.v;
-			newCmd.waveCurve = state.curve;
-			newCmd.bpm = state.bpm;
-			commands.push_back(newCmd);
-		}
-		else if (c == 'L')
-		{
-			state.len = getNum();
-		}
-		else if (c == 'O')
-		{
-			state.oct = getNum();
-		}
-		else if (c == '>')
-		{
-			state.oct--;
-		}
-		else if (c == '<')
-		{
-			state.oct++;
-		}
-		else if (c == 'V')
-		{
-			state.v = getNum();
-		}
-		else if (c == 'T')
-		{
-			state.bpm = getNum();
-		}
-		else if (c == '@')
-		{
-			state.curve = getNum();
-		}
-
-
-	}
-
-	return commands;
-}
-
-template<typename CalcT>
-inline void WavGenerator<CalcT>::setTone(int no, const ToneData& tone)
-{
-	tones_[no] = tone;
-}
-
-template<typename CalcT>
-inline bool WavGenerator<CalcT>::ready(uint32_t sampleRate)
-{
-	if (tones_.empty())
-		return false;
-	for (auto& tone : tones_)
-		if (tone.second.dutyRatio.empty())
-			return false;
-	if(commands_.empty())
-		return false;
-
-	sampleRate_ = sampleRate;
-
-	status_.commandIdx = 0;
-	status_.noteProcedSamples = 0;
-	status_.noteSamples = 0;
-	status_.recentLength.clear();
-	
-	return true;
-}
-
-template<typename CalcT>
-inline void  WavGenerator<CalcT>::addCommand(const NoteCommand& command)
-{
-	commands_.push_back(command);
-}
-template<typename CalcT>
-inline void WavGenerator<CalcT>::addCommand(std::vector<NoteCommand> commands)
-{
-	commands_.insert(commands_.end(), commands.begin(), commands.end());
-}
-
-template<typename CalcT>
-inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop)
+inline std::vector<NoteCommand<CalcT>> WavGenerator<CalcT>::compileMml(const char* mml)
 {
 	static const CalcType toneScaleFreq[] =
 	{
@@ -265,6 +105,173 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 		CalcType(3951.066),
 		CalcType(4186.009),
 	};
+
+	std::vector<NoteCommand<CalcType>> commands;
+	auto end = mml + strlen(mml);
+	auto p = mml;
+	
+	struct State {
+		int oct = 4;
+		uint32_t v = 128;
+		int curve = 0;
+		int len = 4;
+		int bpm = 120;
+	} state;
+	state.v = volumeMax_/2;
+
+	auto getNum = [&p]()
+	{
+		char num[32] = {};
+		auto dst = num;
+		while (*p >= '0' && *p <= '9')
+		{
+			*dst++ = *p++;
+		}
+		return atoi(num);
+	};
+
+	while(p<end)
+	{
+		auto c = *p++;
+		if ((c >= 'A' && c <= 'G')||c=='R')
+		{
+			int offset = state.oct * 12;
+			switch (c)
+			{
+			case 'A': offset += EToneScale::ToneScaleA; break;
+			case 'B': offset += EToneScale::ToneScaleB; break;
+			case 'C': offset += EToneScale::ToneScaleC; break;
+			case 'D': offset += EToneScale::ToneScaleD; break;
+			case 'E': offset += EToneScale::ToneScaleE; break;
+			case 'F': offset += EToneScale::ToneScaleF; break;
+			case 'G': offset += EToneScale::ToneScaleG; break;
+			case 'R': offset = -1;
+			}
+
+
+			auto opt = *p;
+			if (offset >= 0)
+			{
+				if (opt == '#' || opt == '+')
+				{
+					++p;
+					offset++;
+				}
+				else if (opt == '-')
+				{
+					++p;
+					offset--;
+				}
+			}
+			assert(offset==-1 || offset >= EToneScale::ToneScaleA);
+			if (offset > 0)
+				offset -= EToneScale::ToneScaleA;
+
+			int len = getNum();
+			if (len == 0)
+				len = state.len;
+
+			len = NoteLengthResolutio / len;
+
+			int addPeriod = 0;
+			if (*p == '.')
+			{
+				p++;
+				len += len/2;
+			}
+
+			int slur = 0;
+			if (*p == '&')
+			{
+				p++;
+				slur = 1;
+			}
+
+			NoteCommand<CalcType> newCmd;
+			newCmd.toneFreq = offset <= 0 ? 0 : toneScaleFreq[offset];
+			newCmd.length = len;
+			newCmd.Slur = slur;
+			newCmd.vol = state.v;
+			newCmd.waveCurve = state.curve;
+			newCmd.bpm = state.bpm;
+			commands.push_back(newCmd);
+		}
+		else if (c == 'L')
+		{
+			state.len = getNum();
+		}
+		else if (c == 'O')
+		{
+			state.oct = getNum();
+		}
+		else if (c == '<')
+		{
+			state.oct--;
+		}
+		else if (c == '>')
+		{
+			state.oct++;
+		}
+		else if (c == 'V')
+		{
+			state.v = getNum();
+		}
+		else if (c == 'T')
+		{
+			state.bpm = getNum();
+		}
+		else if (c == '@')
+		{
+			state.curve = getNum();
+		}
+
+
+	}
+
+	return commands;
+}
+
+template<typename CalcT>
+inline void WavGenerator<CalcT>::setTone(int no, const ToneData& tone)
+{
+	tones_[no] = tone;
+}
+
+template<typename CalcT>
+inline bool WavGenerator<CalcT>::ready(uint32_t sampleRate)
+{
+	if (tones_.empty())
+		return false;
+	for (auto& tone : tones_)
+		if (tone.second.dutyRatio.empty())
+			return false;
+	if(commands_.empty())
+		return false;
+
+	sampleRate_ = sampleRate;
+
+	status_.commandIdx = 0;
+	status_.noteProcedSamples = 0;
+	status_.noteSamples = 0;
+	status_.recentLength.clear();
+	
+	return true;
+}
+
+template<typename CalcT>
+inline void  WavGenerator<CalcT>::addCommand(const NoteCommand<CalcType>& command)
+{
+	commands_.push_back(command);
+}
+template<typename CalcT>
+inline void WavGenerator<CalcT>::addCommand(std::vector<NoteCommand<CalcType>> commands)
+{
+	commands_.insert(commands_.end(), commands.begin(), commands.end());
+}
+
+template<typename CalcT>
+inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop)
+{
 	std::vector<int16_t> result;
 	const ToneData* tone = nullptr; //nullの場合そのコマンドの情報を集め直すのだろう
 
@@ -275,6 +282,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 
 	while (samples > 0)
 	{
+	REPROC1:
 		if (status_.commandIdx >= commands_.size())
 		{
 			if (!loop)
@@ -311,30 +319,48 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			status_.noteSamples = int(samples- oldSamples);
 			status_.noteProcedSamples = 0;
 			status_.waveStep = 0;
-			status_.toneOff = cmd.toneOffset < 0 ? true : false;
-			if(cmd.toneOffset>=0)
-				status_.baseFreq = CalcType(sampleRate_) / toneScaleFreq[cmd.toneOffset];
+			status_.toneOff = cmd.toneFreq == 0;
+			status_.baseFreq = CalcType(sampleRate_) / cmd.toneFreq;
 			status_.waveFreqDiv2 = status_.baseFreq/2;
 			status_.waveDiv2InSample = 0;
+
+			status_.slurTo = 0;
+			if (cmd.Slur != 0 && commands_.size() > status_.commandIdx + 1)
+			{
+				auto& nextCmd = commands_[status_.commandIdx + 1];
+				status_.slurTo = CalcType(sampleRate_) / nextCmd.toneFreq;
+			}
 			
 		}
 		tone = &tones_[status_.toneIndex];
 		CalcType toneSwitchSample = tone->cycle == 0 ? CalcType(0) : CalcType(sampleRate_) * tone->cycle / 1000;
 
 		int16_t sample = 0;
-		auto nowSampleX100 = CalcType(status_.noteProcedSamples);
+	REPROC2:
 		if (!status_.toneOff)
 		{
+			auto restSample = status_.noteSamples - status_.noteProcedSamples;
 			//半周期が終わった
 			if (CalcType(status_.waveDiv2InSample) > status_.waveFreqDiv2)
 			{
+
+
 				//マイナス側が終了した
 				if (status_.waveStep == 1)
 				{
-					//毎回切替時はDuty比変更
-					if (toneSwitchSample == 0)
+					if (restSample < (int)status_.baseFreq && cmd.Slur==0)
 					{
-						++status_.dutyIndex;
+						//もう収めることができない
+						status_.toneOff = true;
+						goto REPROC2;
+					}
+					else
+					{
+						//毎回切替時はDuty比変更
+						if (toneSwitchSample == 0)
+						{
+							++status_.dutyIndex;
+						}
 					}
 				}
 
@@ -380,7 +406,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			case EWaveCurveType::Triangle:
 			{
 				auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
-				inRatio = Abs(inRatio - CalcType(0.5)) + CalcType(0.5);
+				inRatio = CalcType(1) - Abs(inRatio - CalcType(0.5)) * 2;
 				sample = (int)(inRatio * (cmd.vol * SHORT_MAX / volumeMax_));
 				sample = status_.waveStep == 0 ? sample : -sample;
 				break;
@@ -389,16 +415,14 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			{
 				auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
 				if (status_.waveStep == 0)
-					inRatio = Abs(CalcType(1.0) - inRatio) + CalcType(0.5);
-				else
-					inRatio = -inRatio;
+					inRatio -= CalcType(1.0);
 				sample = (int)(inRatio * (cmd.vol * SHORT_MAX / volumeMax_));
 				break;
 			}
 			case EWaveCurveType::Sin:
 			{
 				auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
-				inRatio * M_PI;
+				inRatio *= M_PI;
 				inRatio += status_.waveStep == 0 ? 0 : M_PI;
 				sample = (int)(sinf(inRatio) * (cmd.vol * SHORT_MAX / volumeMax_));
 				break;

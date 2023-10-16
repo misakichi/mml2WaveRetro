@@ -21,11 +21,13 @@ struct ToneData {
 	int randomRange = 0;
 	std::vector<int> dutyRatio; //通常の波形が50(%)
 };
+template<typename CalcT = CFixFloat<int64_t, 16>>
 struct NoteCommand
 {
-	int toneOffset;		//tone offset from A0.
+	using CalcType = CalcT;
+	CalcType toneFreq;	//tone freq.
 	int length;			//NoteLengthResolutio単位の長さ
-	uint8_t Slur;		//前の音と接続する
+	uint8_t Slur;		//次の音と接続する
 	uint8_t waveCurve;
 	int bpm;
 	int vol;
@@ -41,9 +43,9 @@ public:
 	static constexpr int NoteLengthResolutio = 256; //ex. 256=256分音符まで
 
 	inline void setVolumeMax(uint32_t volumeMax) { volumeMax_ = volumeMax; }
-	inline std::vector<NoteCommand> compileMml(const char* mml);
-	inline void addCommand(const NoteCommand& command);
-	inline void addCommand(std::vector<NoteCommand> commands);
+	inline std::vector<NoteCommand<CalcType>> compileMml(const char* mml);
+	inline void addCommand(const NoteCommand<CalcType>& command);
+	inline void addCommand(std::vector<NoteCommand<CalcType>> commands);
 	inline void setTone(int no, const ToneData& tone);
 	inline bool ready(uint32_t sampleRate);
 	inline std::vector<int16_t> generate(int samples, bool loop);
@@ -53,7 +55,7 @@ private:
 
 	std::string mml_;
 	std::unordered_map<int, ToneData> tones_;
-	std::vector<NoteCommand> commands_;
+	std::vector<NoteCommand<CalcType>> commands_;
 	enum EToneScale {
 		ToneScalePrevB = -1,
 		ToneScaleC,
@@ -93,6 +95,9 @@ private:
 		int waveStep; //波形のプラス側かマイナス側か(0=+ 1=-)
 		CalcType waveFreqDiv2; //波形の半分プラマイの片方側分のサンプル数
 		int waveDiv2InSample; //波形の半分プラマイの片方側分がどれだけ処理されたか
+
+		CalcType slurFrom;	//前のノートとスラーの時の、前のノートのbaseFreq
+		CalcType slurTo;	//次のノートとスラーの時の、次のノートのbaseFreq
 	};
 	PlayStatus status_;
 	uint32_t sampleRate_;

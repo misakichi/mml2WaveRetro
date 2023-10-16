@@ -81,6 +81,7 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_CBN_SELCHANGE(IDC_CBO_CURVE, &CMml2WavDlg::OnCbnSelchangeCboCurve)
 	ON_EN_CHANGE(IDC_TXT_NOISE, &CMml2WavDlg::OnEnChangeTxtNoise)
 	ON_EN_CHANGE(IDC_TXT_DUTY_SWITCH_TIMING, &CMml2WavDlg::OnEnChangeTxtDutySwitchTiming)
+	ON_BN_CLICKED(IDC_BTN_OUTPUT, &CMml2WavDlg::OnBnClickedBtnOutput)
 END_MESSAGE_MAP()
 
 
@@ -190,17 +191,7 @@ void CMml2WavDlg::RefreshDutyList()
 	}
 }
 
-void CALLBACK waveOutCallbackProc(
-	HWAVEOUT  hwo,
-	UINT      uMsg,
-	DWORD_PTR dwInstance,
-	DWORD_PTR dwParam1,
-	DWORD_PTR dwParam2
-)
-{
-}
-
-void CMml2WavDlg::OnBnClickedBtnPlay()
+bool CMml2WavDlg::genWavData(WavData& dest)
 {
 	WavGenerator<>* generator = new WavGenerator<>();
 	CString mml;
@@ -213,15 +204,14 @@ void CMml2WavDlg::OnBnClickedBtnPlay()
 	{
 		MessageBox("出力に必要なデータが足りません");
 		delete generator;
-		return;
+		return false;
 	}
 
-	auto pcm = generator->generate(INT_MAX, false);
-	pcmBuffer_.clear();
-	pcmBuffer_.insert(pcmBuffer_.end(), pcm.begin(), pcm.end());
+	dest.data = generator->generate(INT_MAX, false);
 	delete generator;
 
-	WAVEFORMATEX format = {};
+	WAVEFORMATEX& format = dest.format;
+	memset(&format, 0, sizeof(format));
 	format.wFormatTag = WAVE_FORMAT_PCM;
 	format.nChannels = 1;
 	format.wBitsPerSample = 16;
@@ -230,11 +220,34 @@ void CMml2WavDlg::OnBnClickedBtnPlay()
 	format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
 	format.cbSize = sizeof(format);
 
+	return true;
+}
+
+void CALLBACK waveOutCallbackProc(
+	HWAVEOUT  hwo,
+	UINT      uMsg,
+	DWORD_PTR dwInstance,
+	DWORD_PTR dwParam1,
+	DWORD_PTR dwParam2
+)
+{
+}
+
+void CMml2WavDlg::OnBnClickedBtnPlay()
+{
+	WavData data;
+	if (!genWavData(data))
+		return;
+
+	pcmBuffer_.clear();
+	pcmBuffer_.insert(pcmBuffer_.end(), data.data.begin(), data.data.end());
 	WAVEHDR header = {};
+	memset(&header, 0, sizeof(header));
 	header.lpData = (char*)pcmBuffer_.data();
 	header.dwBufferLength = (DWORD)(pcmBuffer_.size() * sizeof(int16_t));
 	header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
 	header.dwLoops = 1;
+
 
 	if (hWaveOut_)
 		waveOutClose(hWaveOut_);
@@ -243,7 +256,7 @@ void CMml2WavDlg::OnBnClickedBtnPlay()
 	auto result =  waveOutOpen(
 		&hWaveOut_,
 		-1,
-		&format,
+		&data.format,
 		(DWORD_PTR)waveOutCallbackProc,
 		0,
 		CALLBACK_FUNCTION
@@ -299,4 +312,62 @@ void CMml2WavDlg::OnEnChangeTxtDutySwitchTiming()
 	CString str;
 	txtDutySwictTiming_.GetWindowText(str);
 	toneData_.cycle = atoi(str);
+}
+
+
+void CMml2WavDlg::OnBnClickedBtnOutput()
+{
+	WavData data;
+	if (!genWavData(data))
+		return;
+
+	CFileDialog dlg(FALSE, "wav", "output.wav", 6, "Wave File(*.wav)|*.wav||");
+	if (dlg.DoModal() != IDOK)
+		return;
+
+	FILE* fp = nullptr;
+	if (fopen_s(&fp, dlg.GetPathName(), "wb") == NOERROR && fp == NULL)
+	{
+		MessageBox("出力ファイルが開けなかった");
+		return;
+	}
+	
+	#define CHUNK(chunk) ((uint32_t(chunk[0])<<0)|(uint32_t(chunk[1])<<8)|(uint32_t(chunk[2])<<16)|(uint32_t(chunk[3])<<24))
+
+	struct WAVE_FILE_HEADER {
+		uint32_t riff;
+		uint32_t riffSize;
+		uint32_t format;
+		uint32_t fmtChunk;
+		uint32_t fmtChunkSize;
+		uint16_t audioFormat;
+		uint16_t channel;
+		uint32_t sampleRate;
+		uint32_t bps;//byte per 
+		uint16_t blockSize;
+		uint16_t bits;
+		uint32_t dataChunk;
+		uint32_t dataChunkSize;
+
+
+	};
+	WAVE_FILE_HEADER header;
+	header.riff = CHUNK("RIFF");
+	header.riffSize = uint32_t(sizeof(header) + data.data.size()* sizeof(decltype(data.data)::value_type) - 8);
+	header.format = CHUNK("WAVE");
+	header.fmtChunk = CHUNK("fmt ");
+	header.fmtChunkSize = 16;
+	header.audioFormat = 1;
+	header.channel = data.format.nChannels;
+	header.sampleRate = data.format.nSamplesPerSec;
+	header.bps = data.format.nAvgBytesPerSec;
+	header.blockSize = data.format.nBlockAlign;
+	header.bits = data.format.wBitsPerSample;
+	header.dataChunk = CHUNK("data");
+	header.dataChunkSize = uint32_t(data.data.size() * sizeof(decltype(data.data)::value_type));
+
+	fwrite(&header, sizeof(header), 1, fp);
+	fwrite(data.data.data(), sizeof(decltype(data.data)::value_type), data.data.size(), fp);
+	fclose(fp);
+
 }
