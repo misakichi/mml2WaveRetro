@@ -12,7 +12,7 @@ inline WavGenerator<CalcT>::WavGenerator()
 }
 
 template<typename CalcT>
-inline std::vector<NoteCommand<CalcT>> WavGenerator<CalcT>::compileMml(const char* mml)
+inline std::vector<MmlCommand<CalcT>> WavGenerator<CalcT>::compileMml(const char* mml)
 {
 	static const CalcType toneScaleFreq[] =
 	{
@@ -106,18 +106,29 @@ inline std::vector<NoteCommand<CalcT>> WavGenerator<CalcT>::compileMml(const cha
 		CalcType(4186.009),
 	};
 
-	std::vector<NoteCommand<CalcType>> commands;
+	std::vector<MmlCommand<CalcType>> commands;
 	auto end = mml + strlen(mml);
 	auto p = mml;
 	
 	struct State {
 		int oct = 4;
-		uint32_t v = 128;
-		int curve = 0;
 		int len = 4;
-		int bpm = 120;
 	} state;
-	state.v = volumeMax_/2;
+
+	MmlCommand<CalcType> defaultVol;
+	defaultVol.command = MmlCommand<CalcType>::ECommand::Volume;
+	defaultVol.vol = volumeMax_ / 2;
+	commands.push_back(defaultVol);
+
+	MmlCommand<CalcType> defaultTempo;
+	defaultVol.command = MmlCommand<CalcType>::ECommand::Tempo;
+	defaultVol.bpm = 120;;
+	commands.push_back(defaultVol);
+
+	MmlCommand<CalcType> defaultToneType;
+	defaultVol.command = MmlCommand<CalcType>::ECommand::ToneType;
+	defaultVol.waveCurve = 0;
+	commands.push_back(defaultToneType);
 
 	auto getNum = [&p]()
 	{
@@ -135,6 +146,8 @@ inline std::vector<NoteCommand<CalcT>> WavGenerator<CalcT>::compileMml(const cha
 		auto c = *p++;
 		if ((c >= 'A' && c <= 'G')||c=='R')
 		{
+			MmlCommand<CalcType> cmd;
+			cmd.command = MmlCommand<CalcType>::ECommand::ToneNote;
 			int offset = state.oct * 12;
 			switch (c)
 			{
@@ -187,14 +200,10 @@ inline std::vector<NoteCommand<CalcT>> WavGenerator<CalcT>::compileMml(const cha
 				slur = 1;
 			}
 
-			NoteCommand<CalcType> newCmd;
-			newCmd.toneFreq = offset <= 0 ? 0 : toneScaleFreq[offset];
-			newCmd.length = len;
-			newCmd.Slur = slur;
-			newCmd.vol = state.v;
-			newCmd.waveCurve = state.curve;
-			newCmd.bpm = state.bpm;
-			commands.push_back(newCmd);
+			cmd.note.toneFreq = offset <= 0 ? 0 : toneScaleFreq[offset];
+			cmd.note.length = len;
+			cmd.note.Slur = slur;
+			commands.push_back(cmd);
 		}
 		else if (c == 'L')
 		{
@@ -210,19 +219,26 @@ inline std::vector<NoteCommand<CalcT>> WavGenerator<CalcT>::compileMml(const cha
 		}
 		else if (c == '>')
 		{
-			state.oct++;
-		}
-		else if (c == 'V')
-		{
-			state.v = getNum();
+			MmlCommand<CalcType> cmdVol;
+			cmdVol.command = MmlCommand<CalcType>::ECommand::Volume;
+			cmdVol.vol = getNum();
+			commands.push_back(cmdVol);
+
 		}
 		else if (c == 'T')
 		{
-			state.bpm = getNum();
+			MmlCommand<CalcType> cmdTempo;
+			cmdTempo.command = MmlCommand<CalcType>::ECommand::Tempo;
+			cmdTempo.bpm = getNum();
+			commands.push_back(cmdTempo);
+
 		}
 		else if (c == '@')
 		{
-			state.curve = getNum();
+			MmlCommand<CalcType> cmdType;
+			cmdType.command = MmlCommand<CalcType>::ECommand::ToneType;
+			cmdType.waveCurve = getNum();
+			commands.push_back(cmdType);
 		}
 
 
@@ -259,12 +275,12 @@ inline bool WavGenerator<CalcT>::ready(uint32_t sampleRate)
 }
 
 template<typename CalcT>
-inline void  WavGenerator<CalcT>::addCommand(const NoteCommand<CalcType>& command)
+inline void  WavGenerator<CalcT>::addCommand(const MmlCommand<CalcType>& command)
 {
 	commands_.push_back(command);
 }
 template<typename CalcT>
-inline void WavGenerator<CalcT>::addCommand(std::vector<NoteCommand<CalcType>> commands)
+inline void WavGenerator<CalcT>::addCommand(std::vector<MmlCommand<CalcType>> commands)
 {
 	commands_.insert(commands_.end(), commands.begin(), commands.end());
 }
@@ -290,6 +306,18 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			status_.commandIdx = 0;
 		}
 		const auto& cmd = commands_[status_.commandIdx];
+		if (cmd.command != MmlCommand<CalcType>::ECommand::ToneNote)
+		{
+			switch (cmd.command)
+			{
+			case MmlCommand<CalcType>::ECommand::Volume:
+				break;
+			default:
+				break;
+			}
+			status_.commandIdx++;
+			continue;
+		}
 		if (status_.noteProcedSamples == status_.noteSamples)
 		{
 			//新規コマンドです
@@ -303,7 +331,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				status_.recentLength.push_back({ cmd.bpm,0 });
 			}
 			auto& lengthInfo = status_.recentLength.back();
-			lengthInfo.length += cmd.length;
+			lengthInfo.length += cmd.note.length;
 
 			//sampleRate_ * 60 = 1分間のサンプル数
 			//bpm=1分間の四分音符数
@@ -319,16 +347,16 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			status_.noteSamples = int(samples- oldSamples);
 			status_.noteProcedSamples = 0;
 			status_.waveStep = 0;
-			status_.toneOff = cmd.toneFreq == 0;
-			status_.baseFreq = CalcType(sampleRate_) / cmd.toneFreq;
+			status_.toneOff = cmd.note.toneFreq == 0;
+			status_.baseFreq = CalcType(sampleRate_) / cmd.note.toneFreq;
 			status_.waveFreqDiv2 = status_.baseFreq/2;
 			status_.waveDiv2InSample = 0;
 
 			status_.slurTo = 0;
-			if (cmd.Slur != 0 && commands_.size() > status_.commandIdx + 1)
+			if (cmd.note.Slur != 0 && commands_.size() > status_.commandIdx + 1)
 			{
 				auto& nextCmd = commands_[status_.commandIdx + 1];
-				status_.slurTo = CalcType(sampleRate_) / nextCmd.toneFreq;
+				status_.slurTo = CalcType(sampleRate_) / nextCmd.note.toneFreq;
 			}
 			
 		}
@@ -348,7 +376,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				//マイナス側が終了した
 				if (status_.waveStep == 1)
 				{
-					if (restSample < (int)status_.baseFreq && cmd.Slur==0)
+					if (restSample < (int)status_.baseFreq && cmd.note.Slur==0)
 					{
 						//もう収めることができない
 						status_.toneOff = true;

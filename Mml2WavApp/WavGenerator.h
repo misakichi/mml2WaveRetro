@@ -22,15 +22,30 @@ struct ToneData {
 	std::vector<int> dutyRatio; //’Êí‚Ì”gŒ`‚ª50(%)
 };
 template<typename CalcT = CFixFloat<int64_t, 16>>
-struct NoteCommand
+class MmlCommand
 {
+public:
+	MmlCommand() {}
+
+	enum ECommand {
+		ToneNote,	//cdefgab
+		Tempo,		//T
+		Volume,		//V
+		ToneType,	//@
+	};
 	using CalcType = CalcT;
-	CalcType toneFreq;	//tone freq.
-	int length;			//NoteLengthResolutio’PˆÊ‚Ì’·‚³
-	uint8_t Slur;		//Ÿ‚Ì‰¹‚ÆÚ‘±‚·‚é
-	uint8_t waveCurve;
-	int bpm;
-	int vol;
+	ECommand command;
+	struct NoteParam {
+		CalcType toneFreq;	//tone freq.
+		int length;			//NoteLengthResolutio’PˆÊ‚Ì’·‚³
+		uint8_t Slur;		//Ÿ‚Ì‰¹‚ÆÚ‘±‚·‚é
+	};
+	union {
+		NoteParam note;
+		uint8_t waveCurve;
+		int bpm;
+		int vol;
+	};
 };
 
 template<typename CalcT=CFixFloat<int64_t,16>>
@@ -43,9 +58,9 @@ public:
 	static constexpr int NoteLengthResolutio = 256; //ex. 256=256•ª‰¹•„‚Ü‚Å
 
 	inline void setVolumeMax(uint32_t volumeMax) { volumeMax_ = volumeMax; }
-	inline std::vector<NoteCommand<CalcType>> compileMml(const char* mml);
-	inline void addCommand(const NoteCommand<CalcType>& command);
-	inline void addCommand(std::vector<NoteCommand<CalcType>> commands);
+	inline std::vector<MmlCommand<CalcType>> compileMml(const char* mml);
+	inline void addCommand(const MmlCommand<CalcType>& command);
+	inline void addCommand(std::vector<MmlCommand<CalcType>> commands);
 	inline void setTone(int no, const ToneData& tone);
 	inline bool ready(uint32_t sampleRate);
 	inline std::vector<int16_t> generate(int samples, bool loop);
@@ -55,7 +70,7 @@ private:
 
 	std::string mml_;
 	std::unordered_map<int, ToneData> tones_;
-	std::vector<NoteCommand<CalcType>> commands_;
+	std::vector<MmlCommand<CalcType>> commands_;
 	enum EToneScale {
 		ToneScalePrevB = -1,
 		ToneScaleC,
