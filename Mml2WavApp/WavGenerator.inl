@@ -461,20 +461,24 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			continue;
 		}
 
-		auto div2Set = [this](const ToneData* tone, const CalcType& baseFreq)
+		auto div2Set = [this, Lerp](const ToneData* tone, const CalcType& baseFreqSamples)
 		{
 			//ランダム周波数時は次の半分の周波数を決定
 			if (tone->randomRange != 0)
 			{
-				auto freq = (rand() % abs(tone->randomRange * 2)) - tone->randomRange;
-				status_.waveFreqDiv2 = baseFreq + CalcType(freq) / 2;
+				auto baseFreq = CalcType(sampleRate_ )/ baseFreqSamples;
+				auto ratio = (CalcType(rand()) / RAND_MAX);//% abs(tone->randomRange)) - tone->randomRange / 2;
+				auto rate = CalcType(Lerp(tone->randomRange, 100, ratio)) / 100;
+				auto freq = baseFreq * rate;
+				status_.waveFreqDiv2 = CalcType(sampleRate_) / (freq/2);
+
 			}
 			//通常時はbaseとdutyから決定
 			else
 			{
 				auto duty = tone->dutyRatio[status_.dutyIndex % tone->dutyRatio.size()];
 				duty = status_.waveStep == 0 ? duty : 100 - duty;
-				status_.waveFreqDiv2 = baseFreq * duty / 100;
+				status_.waveFreqDiv2 = baseFreqSamples * duty / 100;
 
 			}
 		};
@@ -507,8 +511,8 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			status_.noteSamples = int(samples- oldSamples);
 			status_.noteProcedSamples = 0;
 			status_.toneOff = cmd.note.toneFreq == 0;
-			status_.baseFreq = status_.toneOff ? CalcType(0) : CalcType(sampleRate_) / cmd.note.toneFreq;
-			status_.waveFreqDiv2 = status_.baseFreq/2;
+			status_.baseFreqSamples = status_.toneOff ? CalcType(0) : CalcType(sampleRate_) / cmd.note.toneFreq;
+			status_.waveFreqDiv2 = status_.baseFreqSamples/2;
 			//以前がスラーなら進行位置維持する
 			if (status_.slurTo == 0)
 			{
@@ -527,7 +531,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				status_.slurTo = CalcType(sampleRate_) / nextCmd.note.toneFreq;
 			}
 
-			div2Set(&tones_[status_.toneIndex], status_.baseFreq);
+			div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
 		}
 		tone = &tones_[status_.toneIndex];
 		CalcType toneSwitchSample = tone->cycle == 0 ? CalcType(0) : CalcType(sampleRate_) * tone->cycle / 1000;
@@ -542,14 +546,14 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			if (CalcType(status_.waveDiv2InSample) > status_.waveFreqDiv2)
 			{
 				//スラーで変動するので変数に入れる
-				auto baseFreq = status_.baseFreq;
+				auto baseFreqSamples = status_.baseFreqSamples;
 				if (status_.slurTo != 0)
 				{
 					auto crossSamples = (status_.slurCrossPoint * status_.noteSamples);
 					if (crossSamples >= restSample)
 					{
 						auto ratio = restSample / crossSamples;
-						baseFreq = Lerp(status_.slurTo, status_.baseFreq, CalcType(1)-ratio);
+						baseFreqSamples = Lerp(status_.slurTo, status_.baseFreqSamples, CalcType(1)-ratio);
 					}
 				}
 
@@ -557,7 +561,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				//マイナス側が終了した
 				if (status_.waveStep == 1)
 				{
-					if (restSample < baseFreq && cmd.note.Slur==0)
+					if (restSample < baseFreqSamples && cmd.note.Slur==0)
 					{
 						//スラーOFF時もう収めることができないなら発音終了
 						status_.toneOff = true;
@@ -578,7 +582,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				//半周期開始
 				status_.waveDiv2InSample = 0;
 
-				div2Set(tone, baseFreq);
+				div2Set(tone, baseFreqSamples);
 			}
 
 			//時間によるDuty比切り替え

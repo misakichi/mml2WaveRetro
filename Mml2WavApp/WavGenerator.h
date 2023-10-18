@@ -148,13 +148,13 @@ private:
 		int noteProcedSamples; //処理済み
 
 		bool toneOff;
-		CalcType baseFreq;
+		CalcType baseFreqSamples;
 
 		int waveStep; //波形のプラス側かマイナス側か(0=+ 1=-)
 		CalcType waveFreqDiv2; //波形の半分プラマイの片方側分のサンプル数
 		int waveDiv2InSample; //波形の半分プラマイの片方側分がどれだけ処理されたか
 
-		CalcType slurTo;	//次のノートとスラーの時の、次のノートのbaseFreq
+		CalcType slurTo;	//次のノートとスラーの時の、次のノートのbaseFreqSamples
 
 		CalcType envelopeAtackSamples;		//sample
 		CalcType envelopeDecaySamples;		//sample
