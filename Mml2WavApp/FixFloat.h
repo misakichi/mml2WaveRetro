@@ -7,7 +7,7 @@
 /// </summary>
 /// <typeparam name="BASETYPE">In integer type.</typeparam>
 /// <typeparam name="FloatPrecision">Precision of float.</typeparam>
-template<typename BASETYPE=__int32, unsigned FLOATPRECISION = 16> 
+template<typename BASETYPE=__int64, unsigned FLOATPRECISION = 16> 
 class CFixFloat {
 public:
 	using BaseType = BASETYPE;
@@ -168,11 +168,15 @@ public:
 	}
 	bool operator < (const ThisType& r) const { return value_ < r.value_; }
 	bool operator > (const ThisType& r) const { return value_ > r.value_; }
+	bool operator <= (const ThisType& r) const { return value_ <= r.value_; }
+	bool operator >= (const ThisType& r) const { return value_ >= r.value_; }
 	bool operator == (const ThisType& r) const { return value_ == r.value_; }
 	bool operator != (const ThisType& r) const { return value_ != r.value_; }
 	
 	template<typename T> bool operator < (const T& r) const { return value_ < ThisType(r).value_; }
 	template<typename T> bool operator > (const T& r) const { return value_ > ThisType(r).value_; }
+	template<typename T> bool operator <= (const T& r) const { return value_ <= ThisType(r).value_; }
+	template<typename T> bool operator >= (const T& r) const { return value_ >= ThisType(r).value_; }
 	template<typename T> bool operator == (const T& r) const { return value_ == ThisType(r).value_; }
 	template<typename T> bool operator != (const T& r) const { return value_ != ThisType(r).value_; }
 

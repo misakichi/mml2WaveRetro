@@ -63,4 +63,6 @@ private:
 	HWAVEOUT hWaveOut_;
 	std::vector<int16_t> pcmBuffer_;
 
+	CComboBox cboFloatType_;
+	CComboBox cboSampleRate_;
 };

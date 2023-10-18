@@ -8,7 +8,11 @@
 #define PCH_H
 
 // プリコンパイルするヘッダーをここに追加します
+#pragma warning(push)
+#pragma warning(disable : 4302)
+#pragma warning(disable : 4311)
 #include "framework.h"
 #include <mmeapi.h>
+#pragma warning(pop)
 
 #endif //PCH_H

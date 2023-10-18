@@ -7,7 +7,7 @@
 #include "Mml2WavApp.h"
 #include "Mml2WavDlg.h"
 #include "afxdialogex.h"
-
+#include <memory>
 #pragma comment(lib,"Winmm.lib")
 
 #ifdef _DEBUG
@@ -69,6 +69,8 @@ void CMml2WavDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CBO_CURVE, cboCurve_);
 	DDX_Control(pDX, IDC_TXT_NOISE, txtNoise_);
 	DDX_Control(pDX, IDC_TXT_DUTY_SWITCH_TIMING, txtDutySwictTiming_);
+	DDX_Control(pDX, IDC_CBO_CALC_TYPE, cboFloatType_);
+	DDX_Control(pDX, IDC_CBO_SAMPLE_RATE, cboSampleRate_);
 }
 
 BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
@@ -124,6 +126,8 @@ BOOL CMml2WavDlg::OnInitDialog()
 	}
 	cboCurve_.SetCurSel(0);
 	cboDuty_.SetCurSel(49);
+	cboFloatType_.SetCurSel(0);
+	cboSampleRate_.SetCurSel(0);
 	txtNoise_.SetWindowText("0");
 	txtDutySwictTiming_.SetWindowText("0");
 
@@ -191,24 +195,56 @@ void CMml2WavDlg::RefreshDutyList()
 	}
 }
 
+
 bool CMml2WavDlg::genWavData(WavData& dest)
 {
-	WavGenerator<>* generator = new WavGenerator<>();
-	CString mml;
-	txtMml_.GetWindowText(mml);
-	auto commands = generator->compileMml(mml);
-	generator->setTone(0, toneData_);
-	generator->addCommand(commands);
-
-	if (generator->ready(44100) == false)
+	int sampleRate = 44100;
+	auto genWrapper = [&](auto pcmGenerator)
 	{
-		MessageBox("出力に必要なデータが足りません");
-		delete generator;
-		return false;
-	}
+		switch (cboSampleRate_.GetCurSel())
+		{
+		case 0: sampleRate = 44100;	break;
+		case 1: sampleRate = 48000;	break;
+		case 2: sampleRate = 96000;	break;
+		case 3: sampleRate = 192000; break;
+		}												
 
-	dest.data = generator->generate(INT_MAX, false);
-	delete generator;
+		CString mml;
+		txtMml_.GetWindowText(mml);
+		
+		std::vector<std::remove_pointer_t<decltype(pcmGenerator.get())>::TypedCommand> commands;
+		size_t errPos;
+		if (!pcmGenerator->compileMml(mml, commands, &errPos))
+		{
+			CString msg;
+			msg.Format("MML %lld文字目でエラー", errPos);
+			MessageBox(msg);
+			return false;
+		}
+		pcmGenerator->setTone(0, toneData_);
+		pcmGenerator->addCommand(commands);
+
+		if (pcmGenerator->ready(sampleRate) == false)
+		{
+			MessageBox("出力に必要なデータが足りません");
+			return false;
+		}
+
+		dest.data = pcmGenerator->generate(INT_MAX, false);
+		pcmGenerator = nullptr;
+		return true;
+
+	};
+	std::shared_ptr<WavGenerator<>> generator;
+	bool ret = false;
+	switch (cboFloatType_.GetCurSel())
+	{
+	case 0: ret = genWrapper(std::make_unique<WavGenerator<>>()); break;
+	case 1: ret = genWrapper(std::make_unique<WavGenerator<float>>()); break;
+	case 2: ret = genWrapper(std::make_unique<WavGenerator<double>>()); break;
+	}
+	if (!ret)
+		return false;
 
 	WAVEFORMATEX& format = dest.format;
 	memset(&format, 0, sizeof(format));
@@ -216,7 +252,7 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 	format.nChannels = 1;
 	format.wBitsPerSample = 16;
 	format.nBlockAlign = format.nChannels * format.wBitsPerSample / 8;
-	format.nSamplesPerSec = 44100;    //標本化周波数
+	format.nSamplesPerSec = sampleRate;    //標本化周波数
 	format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
 	format.cbSize = sizeof(format);
 
