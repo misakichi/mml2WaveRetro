@@ -5,10 +5,12 @@
 template<typename CalcT>
 inline WavGenerator<CalcT>::WavGenerator()
 {
+#ifdef USE_CALCED_SIN_TABLE
 	for (int i = 0; i < 360 * SinTableResolution; i++)
 	{
-		sinTable_[i] = CalcType(sin(i * M_PI / 180.0));
+		sinTable_[i] = CalcType(sin(i * M_PI / 180.0 / 100));
 	}
+#endif
 }
 
 template<typename CalcT>
@@ -466,11 +468,9 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			//ランダム周波数時は次の半分の周波数を決定
 			if (tone->randomRange != 0)
 			{
-				auto baseFreq = CalcType(sampleRate_ )/ baseFreqSamples;
-				auto ratio = (CalcType(rand()) / RAND_MAX);//% abs(tone->randomRange)) - tone->randomRange / 2;
-				auto rate = CalcType(Lerp(tone->randomRange, 100, ratio)) / 100;
-				auto freq = baseFreq * rate;
-				status_.waveFreqDiv2 = CalcType(sampleRate_) / (freq/2);
+				auto random = CalcType(100 - tone->randomRange) + (CalcType(rand()) / RAND_MAX) * (tone->randomRange * 2);
+				auto freq = baseFreqSamples * random / 200;
+				status_.waveFreqDiv2 = freq;
 
 			}
 			//通常時はbaseとdutyから決定
@@ -512,12 +512,12 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			status_.noteProcedSamples = 0;
 			status_.toneOff = cmd.note.toneFreq == 0;
 			status_.baseFreqSamples = status_.toneOff ? CalcType(0) : CalcType(sampleRate_) / cmd.note.toneFreq;
-			status_.waveFreqDiv2 = status_.baseFreqSamples/2;
 			//以前がスラーなら進行位置維持する
 			if (status_.slurTo == 0)
 			{
 				status_.waveStep = 0;
 				status_.waveDiv2InSample = 0;
+				div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
 			}
 			else
 			{
@@ -531,7 +531,6 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				status_.slurTo = CalcType(sampleRate_) / nextCmd.note.toneFreq;
 			}
 
-			div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
 		}
 		tone = &tones_[status_.toneIndex];
 		CalcType toneSwitchSample = tone->cycle == 0 ? CalcType(0) : CalcType(sampleRate_) * tone->cycle / 1000;
@@ -553,7 +552,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 					if (crossSamples >= restSample)
 					{
 						auto ratio = restSample / crossSamples;
-						baseFreqSamples = Lerp(status_.slurTo, status_.baseFreqSamples, CalcType(1)-ratio);
+						baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1)-ratio);
 					}
 				}
 
@@ -579,10 +578,28 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 
 				//プラマイ切り替え
 				status_.waveStep = (status_.waveStep + 1) % 2;
+
+
+				div2Set(tone, baseFreqSamples);
+
 				//半周期開始
 				status_.waveDiv2InSample = 0;
 
-				div2Set(tone, baseFreqSamples);
+			}
+			else
+			{
+				//スラーを少しずつでも反映する場合はここを有効にする
+				//if (status_.slurTo != 0)
+				//{
+				//	auto baseFreqSamples = status_.baseFreqSamples;
+				//	auto crossSamples = (status_.slurCrossPoint * status_.noteSamples);
+				//	if (crossSamples >= restSample)
+				//	{
+				//		auto ratio = restSample / crossSamples;
+				//		baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
+				//	}
+				//	div2Set(tone, baseFreqSamples);
+				//}
 			}
 
 			//時間によるDuty比切り替え
@@ -622,9 +639,15 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			case EWaveCurveType::Sin:
 				{
 					auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
+#ifdef USE_CALCED_SIN_TABLE
+					inRatio *= CalcType(180);
+					inRatio += status_.waveStep == 0 ? CalcType(0) : CalcType(180);
+					level = sinTable_[int(inRatio*100)%36000];
+#else
 					inRatio *= CalcType(M_PI);
 					inRatio += status_.waveStep == 0 ? CalcType(0) : CalcType(M_PI);
 					level = CalcType(sinf((float)inRatio));
+#endif
 					break;
 				}
 			case EWaveCurveType::Noise:

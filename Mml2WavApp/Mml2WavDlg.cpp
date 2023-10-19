@@ -198,6 +198,12 @@ void CMml2WavDlg::RefreshDutyList()
 
 bool CMml2WavDlg::genWavData(WavData& dest)
 {
+	if (toneData_.randomRange < 0 || toneData_.randomRange>100)
+	{
+		MessageBox("ノイズ範囲が範囲外（0～100%）");
+		return false;
+	}
+
 	int sampleRate = 44100;
 	auto genWrapper = [&](auto pcmGenerator)
 	{
@@ -339,7 +345,8 @@ void CMml2WavDlg::OnEnChangeTxtNoise()
 {
 	CString str;
 	txtNoise_.GetWindowText(str);
-	toneData_.randomRange = atoi(str);
+	auto noiseRnd = atoi(str);
+	toneData_.randomRange = noiseRnd;
 }
 
 

@@ -73,7 +73,7 @@ public:
 	ECommand command;
 
 };
-
+//#define USE_CALCED_SIN_TABLE
 template<typename CalcT=CFixFloat<int64_t,16>>
 class WavGenerator
 {
@@ -90,6 +90,7 @@ public:
 		ToneLevelOutOfRangeUpper
 	};
 
+
 	using CalcType = CalcT;
 	using TypedCommand = MmlCommand<CalcType>;
 	WavGenerator();
@@ -104,9 +105,10 @@ public:
 	inline bool ready(uint32_t sampleRate);
 	inline std::vector<int16_t> generate(int samples, bool loop);
 private:
+#ifdef USE_CALCED_SIN_TABLE
 	static constexpr int SinTableResolution = 100;
 	CalcType sinTable_[360 * SinTableResolution];	//0.01度刻みのsinテーブル、結果は10000倍値
-
+#endif
 	std::string mml_;
 	std::unordered_map<int, ToneData> tones_;
 	std::vector<TypedCommand> commands_;
