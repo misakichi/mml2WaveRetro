@@ -3,7 +3,7 @@
 #include <math.h>
 
 template<typename CalcT>
-inline WavGenerator<CalcT>::WavGenerator()
+inline MmlUtility::WavGenerator<CalcT>::WavGenerator()
 {
 #ifdef USE_CALCED_SIN_TABLE
 	for (int i = 0; i < 360 * SinTableResolution; i++)
@@ -14,7 +14,7 @@ inline WavGenerator<CalcT>::WavGenerator()
 }
 
 template<typename CalcT>
-inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCommand>& dest, size_t* errorPoint, ErrorReson* reason)
+inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCommand>& dest, size_t* errorPoint, ErrorReson* reason)
 {
 	static const CalcType toneScaleFreq[] =
 	{
@@ -154,6 +154,12 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 	defaultADSR.envelope.releaseTime = 20;
 	commands.push_back(defaultADSR);
 
+	TypedCommand cmdPan;
+	cmdPan.command = TypedCommand::ECommand::Pan;
+	cmdPan.pan = 128;
+	commands.push_back(cmdPan);
+
+
 	auto getNumF = [&p]() -> CalcType
 	{
 		bool isFloatPoint = false;
@@ -185,12 +191,11 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 		return false;
 	};
 
-	int slur = 0;
-
+	int slurFromCmdIndex = -1;
 	while (p < end)
 	{
 		auto c = *p++;
-		if ((c >= 'A' && c <= 'G') || c=='X' || c == 'R')
+		if ((c >= 'A' && c <= 'G') || c=='X' || c == 'R' || c == 'N')
 		{
 			TypedCommand cmd;
 			cmd.command = TypedCommand::ECommand::ToneNote;
@@ -198,6 +203,23 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 			if (c == 'X')
 			{
 				cmd.note.toneFreq = getNumF();
+				//長さ変更がある
+				if (*p == ':')
+					p++;
+			}
+			else if (c == 'N')
+			{
+				int  offset= getNumI();
+				if (offset < 0)
+					return genError(ErrorReson::ToneLevelOutOfRangeLower);
+				if (offset >= sizeof(toneScaleFreq) / sizeof(toneScaleFreq[0]))
+					return genError(ErrorReson::ToneLevelOutOfRangeUpper);
+
+				cmd.note.toneFreq = toneScaleFreq[offset];
+
+				//長さ変更がある
+				if (*p == ':')
+					p++;
 			}
 			else if (c == 'R')
 			{
@@ -216,13 +238,6 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 				case 'F': offset += EToneScale::ToneScaleF; break;
 				case 'G': offset += EToneScale::ToneScaleG; break;
 				}
-
-				if (slur != 0 && offset < 0)
-				{
-					//スラーの次が音符じゃない
-					return genError(ErrorReson::IllegalCommandNextSlur);
-				}
-
 
 				auto opt = *p;
 				if (offset >= 0)
@@ -245,6 +260,13 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 
 				cmd.note.toneFreq = toneScaleFreq[offset];
 			}
+			if (slurFromCmdIndex != -1 && cmd.note.toneFreq==0)
+			{
+				//スラーの次が音符じゃない
+				return genError(ErrorReson::IllegalCommandNextSlur);
+			}
+
+
 
 			int len = getNumI();
 			if (len == 0)
@@ -259,15 +281,23 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 				len += len / 2;
 			}
 
-			slur = 0;
+			if (slurFromCmdIndex != -1)
+			{
+				commands[slurFromCmdIndex].note.SlurToCmdIdx = (int)commands.size();
+			}
+
 			if (*p == '&')
 			{
 				p++;
-				slur = 1;
+				slurFromCmdIndex = (int)commands.size();
+			}
+			else
+			{
+				slurFromCmdIndex = -1;
 			}
 
 			cmd.note.length = len;
-			cmd.note.Slur = slur;
+			cmd.note.SlurToCmdIdx = -1;
 			commands.push_back(cmd);
 		}
 		else if (c == 'O')
@@ -282,20 +312,31 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 		{
 			state.oct++;
 		}
-		else if (slur != 0)
-		{
-			//スラーの次が音程系、音符系じゃない
-			return genError(ErrorReson::IllegalCommandNextSlur);
-		}
 		else if (c == 'L')
 		{
 			state.len = getNumI();
 		}
+		else if (slurFromCmdIndex != -1)
+		{
+			//スラーの次が音程系、音符系じゃない
+			return genError(ErrorReson::IllegalCommandNextSlur);
+		}
+		else if (c == 'P')
+		{
+			TypedCommand cmdPan;
+			cmdPan.command = TypedCommand::ECommand::Pan;
+			cmdPan.pan = getNumI();
+			if (cmdPan.pan < 0 || cmdPan.pan>256)
+				return genError(ErrorReson::PanOutOfRange);
+			commands.push_back(cmdPan);
+	}
 		else if (c == 'V')
 		{
 			TypedCommand cmdVol;
 			cmdVol.command = TypedCommand::ECommand::Volume;
 			cmdVol.vol = getNumI();
+			if (cmdPan.vol < 0 || cmdPan.vol>255)
+				return genError(ErrorReson::VolumeOutOfRange);
 			commands.push_back(cmdVol);
 
 		}
@@ -361,18 +402,22 @@ inline bool WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCo
 
 	}
 
+	if (slurFromCmdIndex != -1)
+	{
+		return genError(ErrorReson::SlurNotClose);
+	}
 	dest.swap(commands);
 	return true;
 }
 
 template<typename CalcT>
-inline void WavGenerator<CalcT>::setTone(int no, const ToneData& tone)
+inline void MmlUtility::WavGenerator<CalcT>::setTone(int no, const ToneData& tone)
 {
 	tones_[no] = tone;
 }
 
 template<typename CalcT>
-inline bool WavGenerator<CalcT>::ready(uint32_t sampleRate)
+inline bool MmlUtility::WavGenerator<CalcT>::ready(uint32_t sampleRate)
 {
 	if (tones_.empty())
 		return false;
@@ -393,19 +438,22 @@ inline bool WavGenerator<CalcT>::ready(uint32_t sampleRate)
 }
 
 template<typename CalcT>
-inline void  WavGenerator<CalcT>::addCommand(const TypedCommand& command)
+inline void  MmlUtility::WavGenerator<CalcT>::addCommand(const TypedCommand& command)
 {
 	commands_.push_back(command);
 }
 template<typename CalcT>
-inline void WavGenerator<CalcT>::addCommand(std::vector<TypedCommand> commands)
+inline void MmlUtility::WavGenerator<CalcT>::addCommand(std::vector<TypedCommand> commands)
 {
 	commands_.insert(commands_.end(), commands.begin(), commands.end());
 }
 
 template<typename CalcT>
-inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop)
+template<int Channels>
+inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate()
 {
+	static_assert(Channels == 1 || Channels == 2);
+
 	std::vector<int16_t> result;
 	const ToneData* tone = nullptr; //nullの場合そのコマンドの情報を集め直すのだろう
 
@@ -423,14 +471,12 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 		return sample;
 	};
 
-	while (samples > 0)
+	while (1)
 	{
 	//REPROC1:
 		if (status_.commandIdx >= commands_.size())
 		{
-			if (!loop)
-				return result;
-			status_.commandIdx = 0;
+			return result;
 		}
 		const auto& cmd = commands_[status_.commandIdx];
 		if (cmd.command != TypedCommand::ECommand::ToneNote)
@@ -439,6 +485,9 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			{
 			case TypedCommand::ECommand::Volume:
 				status_.volume = CalcType(cmd.vol) / volumeMax_;
+				break;
+			case TypedCommand::ECommand::Pan:
+				status_.pan = cmd.pan;
 				break;
 			case TypedCommand::ECommand::Tempo:
 				status_.bpm = cmd.bpm;
@@ -477,7 +526,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			else
 			{
 				auto duty = tone->dutyRatio[status_.dutyIndex % tone->dutyRatio.size()];
-				duty = status_.waveStep == 0 ? duty : 100 - duty;
+				auto dutyCt = CalcType(status_.waveStep == 0 ? duty : 100 - duty);
 				status_.waveFreqDiv2 = baseFreqSamples * duty / 100;
 
 			}
@@ -512,6 +561,8 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			status_.noteProcedSamples = 0;
 			status_.toneOff = cmd.note.toneFreq == 0;
 			status_.baseFreqSamples = status_.toneOff ? CalcType(0) : CalcType(sampleRate_) / cmd.note.toneFreq;
+			status_.isSlurFrom = status_.slurTo != 0;
+
 			//以前がスラーなら進行位置維持する
 			if (status_.slurTo == 0)
 			{
@@ -519,15 +570,12 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				status_.waveDiv2InSample = 0;
 				div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
 			}
-			else
-			{
-			}
 
 			status_.slurTo = 0;
 			//次がスラー
-			if (cmd.note.Slur != 0 && commands_.size() > status_.commandIdx + 1)
+			if (cmd.note.SlurToCmdIdx != -1)
 			{
-				auto& nextCmd = commands_[status_.commandIdx + 1];
+				auto& nextCmd = commands_[cmd.note.SlurToCmdIdx];
 				status_.slurTo = CalcType(sampleRate_) / nextCmd.note.toneFreq;
 			}
 
@@ -560,7 +608,7 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 				//マイナス側が終了した
 				if (status_.waveStep == 1)
 				{
-					if (restSample < baseFreqSamples && cmd.note.Slur==0)
+					if (restSample < baseFreqSamples && cmd.note.SlurToCmdIdx == -1)
 					{
 						//スラーOFF時もう収めることができないなら発音終了
 						status_.toneOff = true;
@@ -659,33 +707,47 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 			}
 			//ボリューム値ADSRによる音量調整
 			auto fNowSample = CalcType(status_.noteProcedSamples);
-			CalcType adsr;
+			CalcType adsr = status_.envelopeSustainLevel;
 			if (fNowSample < status_.envelopeAtackSamples)
 			{
 				//A
-				adsr = fNowSample / status_.envelopeAtackSamples * status_.envelopeAtackLevel;
+				if (status_.isSlurFrom == 0)
+				{
+					adsr = fNowSample / status_.envelopeAtackSamples * status_.envelopeAtackLevel;
+				}
 			}
 			else if (fNowSample < status_.envelopeAtackSamples + status_.envelopeDecaySamples)
 			{
 				//D
-				auto ratio = (fNowSample - status_.envelopeAtackSamples) / status_.envelopeDecaySamples;
-				adsr = Lerp(status_.envelopeAtackLevel, status_.envelopeSustainLevel, ratio);
+				if (status_.isSlurFrom == 0)
+				{
+					auto ratio = (fNowSample - status_.envelopeAtackSamples) / status_.envelopeDecaySamples;
+					adsr = Lerp(status_.envelopeAtackLevel, status_.envelopeSustainLevel, ratio);
+				}
 			}
 			else if (restSample < status_.envelopeReleaseSamples)
 			{
 				//R
-				adsr = restSample / status_.envelopeReleaseSamples * status_.envelopeSustainLevel;
-			}
-			else
-			{
-				//S
-				adsr = status_.envelopeSustainLevel;
+				if (status_.slurTo == 0)
+				{
+					adsr = restSample / status_.envelopeReleaseSamples * status_.envelopeSustainLevel;
+				}
 			}
 
 			sample = (std::max)(SHORT_MIN, (std::min)(SHORT_MAX, (int)(level * adsr * status_.volume * SHORT_MAX)));
 		}
-		result.push_back(sample);
-		--samples;
+		if constexpr (Channels == 1)
+		{
+			result.push_back(sample);
+		}
+		else if constexpr (Channels==2)
+		{
+			
+			//L
+			result.push_back(sample * (256 - status_.pan) / 256);
+			//R
+			result.push_back(sample * (status_.pan) / 256);
+		}
 
 		status_.waveDiv2InSample++;
 		status_.noteProcedSamples++;
@@ -696,4 +758,79 @@ inline std::vector<int16_t> WavGenerator<CalcT>::generate(int samples, bool loop
 
 
 	return result;
+}
+
+
+template<unsigned Channels, typename CalcT, int Banks>
+bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate)
+{
+	static_assert(Banks > 0);
+	static_assert(Channels == 1 || Channels == 2);
+
+	std::vector<int16_t> result;
+	//基本値
+	ToneData defaultTone[10] = {};
+	defaultTone[0].curve = EWaveCurveType::Rectangle;
+	defaultTone[0].dutyRatio.push_back(50);
+	defaultTone[1].curve = EWaveCurveType::Triangle;
+	defaultTone[1].dutyRatio.push_back(50);
+	defaultTone[2].curve = EWaveCurveType::Saw;
+	defaultTone[2].dutyRatio.push_back(50);
+	defaultTone[3].curve = EWaveCurveType::Sin;
+	defaultTone[3].dutyRatio.push_back(50);
+	defaultTone[4].curve = EWaveCurveType::Noise;
+	defaultTone[4].dutyRatio.push_back(50);
+	defaultTone[5].curve = EWaveCurveType::Rectangle;
+	defaultTone[5].dutyRatio.push_back(33.33333333f);
+	defaultTone[6].curve = EWaveCurveType::Rectangle;
+	defaultTone[6].dutyRatio.push_back(25);
+	defaultTone[7].curve = EWaveCurveType::Rectangle;
+	defaultTone[7].dutyRatio.push_back(12.5f);
+	defaultTone[8].curve = EWaveCurveType::Rectangle;
+	defaultTone[8].dutyRatio.push_back(50);
+	defaultTone[8].randomRange = 50;
+	defaultTone[9].curve = EWaveCurveType::Triangle;
+	defaultTone[9].dutyRatio.push_back(50);
+	defaultTone[8].randomRange = 50;
+
+	//デフォルトセッティング
+	//120bpm
+	//四分音符
+	//オクターブ4
+	//音色0
+	//音量128
+	//スラークロスポイント1/4
+	//エンベロープ Atack:15ms Decay:15ms Release:30ms AtackLevel:255 SustainLevel:200
+	//パン　128=センター
+	const char* defaultSetting = "T120O4L4V128@0@S4@E15:15:30:255:200P128";
+
+	//処理に時間がかかるならここはマルチスレッド化すると良い
+	for (int i = 0; i < Banks; i++)
+	{
+		WavGenerator<CalcT> generator;
+		std::vector<WavGenerator<CalcT>::TypedCommand> commands;
+		std::string mml = prepareSharedMml + bankMml[i];
+		for (int i = 0; i < 10; i++)
+			generator.setTone(i, defaultTone[i]);
+
+		generator.setVolumeMax(255);
+		generator.ready(sampleRate);
+		if (!generator.compileMml(mml.c_str(), commands, &dest.errPos, &dest.result))
+		{
+			return false;
+		}
+		generator.addCommand(commands);
+		auto pcm = generator.generate<Channels>();
+		if (pcm.size() > result.size())
+			result.resize(pcm.size());
+		auto dst = result.begin();
+		for (auto src : pcm)
+			*dst++ += src;
+	}
+
+	dest.errPos = 0;
+	dest.result = ErrorReson::NoError;
+	dest.pcm.swap(result);
+
+
 }

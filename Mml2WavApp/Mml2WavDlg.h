@@ -46,7 +46,7 @@ private:
 	CComboBox cboDuty_;
 	CComboBox cboCurve_;
 	CEdit txtNoise_;
-	ToneData toneData_;
+	MmlUtility::ToneData toneData_;
 	CEdit txtDutySwictTiming_;
 
 	afx_msg void OnBnClickedBtnPlay();

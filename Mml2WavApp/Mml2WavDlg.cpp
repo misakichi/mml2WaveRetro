@@ -236,18 +236,18 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 			return false;
 		}
 
-		dest.data = pcmGenerator->generate(INT_MAX, false);
+		dest.data = pcmGenerator->generate<2>();
 		pcmGenerator = nullptr;
 		return true;
 
 	};
-	std::shared_ptr<WavGenerator<>> generator;
+	std::shared_ptr<MmlUtility::WavGenerator<>> generator;
 	bool ret = false;
 	switch (cboFloatType_.GetCurSel())
 	{
-	case 0: ret = genWrapper(std::make_unique<WavGenerator<>>()); break;
-	case 1: ret = genWrapper(std::make_unique<WavGenerator<float>>()); break;
-	case 2: ret = genWrapper(std::make_unique<WavGenerator<double>>()); break;
+	case 0: ret = genWrapper(std::make_unique<MmlUtility::WavGenerator<>>()); break;
+	case 1: ret = genWrapper(std::make_unique<MmlUtility::WavGenerator<float>>()); break;
+	case 2: ret = genWrapper(std::make_unique<MmlUtility::WavGenerator<double>>()); break;
 	}
 	if (!ret)
 		return false;
@@ -255,7 +255,7 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 	WAVEFORMATEX& format = dest.format;
 	memset(&format, 0, sizeof(format));
 	format.wFormatTag = WAVE_FORMAT_PCM;
-	format.nChannels = 1;
+	format.nChannels = 2;
 	format.wBitsPerSample = 16;
 	format.nBlockAlign = format.nChannels * format.wBitsPerSample / 8;
 	format.nSamplesPerSec = sampleRate;    //標本化周波数
