@@ -326,7 +326,7 @@ void CMml2WavDlg::OnCbnSelchangeCboCurve()
 void CMml2WavDlg::OnBnClickedBtnDutyRatioAdd()
 {
 	toneData_.curve = decltype(toneData_.curve)(cboCurve_.GetCurSel());
-	toneData_.dutyRatio.push_back(cboDuty_.GetCurSel() + 1);
+	toneData_.dutyRatio.push_back((float)(cboDuty_.GetCurSel() + 1));
 	RefreshDutyList();
 }
 
