@@ -22,6 +22,13 @@
 #define IDC_CBO_CALC_TYPE               1010
 #define IDC_COMBO2                      1011
 #define IDC_CBO_SAMPLE_RATE             1011
+#define IDC_TAB_BANK                    1012
+#define IDC_BUTTON1                     1013
+#define IDC_CBO_TONE_NUMBER             1015
+#define IDC_CHK_LOOP                    1016
+#define IDC_CHECK2                      1017
+#define IDC_CHK_START_FROM_CURRENT      1017
+#define IDC_BTN__STOP                   1019
 
 // Next default values for new objects
 // 
@@ -29,7 +36,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1012
+#define _APS_NEXT_CONTROL_VALUE         1017
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
