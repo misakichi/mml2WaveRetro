@@ -5,9 +5,7 @@
 #pragma once
 
 #include "WavGenerator.h"
-#include <array>
 
-struct WaveOutParam;
 // CMml2WavDlg ダイアログ
 class CMml2WavDlg : public CDialogEx
 {
@@ -40,7 +38,6 @@ private:
 	struct WavData
 	{
 		WAVEFORMATEX format;
-		size_t startSample;
 		std::vector<int16_t> data;
 	};
 
@@ -62,25 +59,10 @@ private:
 	void RefreshDutyList();
 	bool genWavData(WavData& dest);
 
+
+	HWAVEOUT hWaveOut_;
+	std::vector<int16_t> pcmBuffer_;
+
 	CComboBox cboFloatType_;
 	CComboBox cboSampleRate_;
-	CTabCtrl tabBank_;
-
-	std::vector<WaveOutParam*> playing_;
-
-	enum { BANKS=5};
-	std::string shared_;
-	std::array<std::string, BANKS> bank_;
-public:
-	afx_msg void OnTcnSelchangeTabBank(NMHDR* pNMHDR, LRESULT* pResult);
-	afx_msg void OnEnChangeTxtMml();
-private:
-	CComboBox cboToneNumber_;
-public:
-	afx_msg void OnBnClickedButton1();
-	afx_msg void OnBnClickedBtn();
-private:
-	CButton chkLoop_;
-public:
-	CButton chkFromCurrent_;
 };

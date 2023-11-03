@@ -55,6 +55,7 @@ END_MESSAGE_MAP()
 
 CMml2WavDlg::CMml2WavDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_MFCAPPLICATION1_DIALOG, pParent)
+	, hWaveOut_(nullptr)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
@@ -70,10 +71,6 @@ void CMml2WavDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_TXT_DUTY_SWITCH_TIMING, txtDutySwictTiming_);
 	DDX_Control(pDX, IDC_CBO_CALC_TYPE, cboFloatType_);
 	DDX_Control(pDX, IDC_CBO_SAMPLE_RATE, cboSampleRate_);
-	DDX_Control(pDX, IDC_TAB_BANK, tabBank_);
-	DDX_Control(pDX, IDC_CBO_TONE_NUMBER, cboToneNumber_);
-	DDX_Control(pDX, IDC_CHK_LOOP, chkLoop_);
-	DDX_Control(pDX, IDC_CHK_START_FROM_CURRENT, chkFromCurrent_);
 }
 
 BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
@@ -87,10 +84,6 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_EN_CHANGE(IDC_TXT_NOISE, &CMml2WavDlg::OnEnChangeTxtNoise)
 	ON_EN_CHANGE(IDC_TXT_DUTY_SWITCH_TIMING, &CMml2WavDlg::OnEnChangeTxtDutySwitchTiming)
 	ON_BN_CLICKED(IDC_BTN_OUTPUT, &CMml2WavDlg::OnBnClickedBtnOutput)
-	ON_NOTIFY(TCN_SELCHANGE, IDC_TAB_BANK, &CMml2WavDlg::OnTcnSelchangeTabBank)
-	ON_EN_CHANGE(IDC_TXT_MML, &CMml2WavDlg::OnEnChangeTxtMml)
-	ON_BN_CLICKED(IDC_BUTTON1, &CMml2WavDlg::OnBnClickedButton1)
-	ON_BN_CLICKED(IDC_BTN__STOP, &CMml2WavDlg::OnBnClickedBtn)
 END_MESSAGE_MAP()
 
 
@@ -137,15 +130,6 @@ BOOL CMml2WavDlg::OnInitDialog()
 	cboSampleRate_.SetCurSel(0);
 	txtNoise_.SetWindowText("0");
 	txtDutySwictTiming_.SetWindowText("0");
-
-	tabBank_.InsertItem(0, "共通");
-	tabBank_.InsertItem(1, "A");
-	tabBank_.InsertItem(2, "B");
-	tabBank_.InsertItem(3, "C");
-	tabBank_.InsertItem(4, "D");
-	tabBank_.InsertItem(5, "E");
-
-	cboToneNumber_.SetCurSel(0);
 
 	return TRUE;  // フォーカスをコントロールに設定した場合を除き、TRUE を返します。
 }
@@ -206,7 +190,7 @@ void CMml2WavDlg::RefreshDutyList()
 	for (auto ratio : toneData_.dutyRatio)
 	{
 		CString str;
-		str.Format("%f", ratio);
+		str.Format("%d", ratio);
 		lstDuty_.AddString(str);
 	}
 }
@@ -214,9 +198,14 @@ void CMml2WavDlg::RefreshDutyList()
 
 bool CMml2WavDlg::genWavData(WavData& dest)
 {
+	if (toneData_.randomRange < 0 || toneData_.randomRange>100)
+	{
+		MessageBox("ノイズ範囲が範囲外（0～100%）");
+		return false;
+	}
 
 	int sampleRate = 44100;
-	auto genWrapper = [&](auto dummyCalcTypeVariable, MmlUtility::GenerateMmlToPcmResult& result)
+	auto genWrapper = [&](auto pcmGenerator)
 	{
 		switch (cboSampleRate_.GetCurSel())
 		{
@@ -225,92 +214,45 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 		case 2: sampleRate = 96000;	break;
 		case 3: sampleRate = 192000; break;
 		}												
-		auto currentTab = tabBank_.GetCurSel() - 1;
-		int curStart, curEnd;
-		txtMml_.GetSel(curStart, curEnd);
-		auto ret = MmlUtility::generateMmlToPcm<2, decltype(dummyCalcTypeVariable), BANKS>(result, shared_, bank_, sampleRate, currentTab, curStart);
-		dest.startSample = result.pcmStartOffset;
+
+		CString mml;
+		txtMml_.GetWindowText(mml);
 		
-		if (!ret)
+		std::vector<std::remove_pointer_t<decltype(pcmGenerator.get())>::TypedCommand> commands;
+		size_t errPos;
+		if (!pcmGenerator->compileMml(mml, commands, &errPos))
 		{
-			std::string errMsg = "error:";
-			if (result.errBank == -2)
-			{
-				errMsg += "内部MMLコード ";
-				errMsg += std::to_string(result.errPos);
-				errMsg += " 文字目";
-			}
-			else if (result.errBank == -1)
-			{
-				errMsg += "共通MMLコード ";
-				errMsg += std::to_string(result.errPos);
-				errMsg += " 文字目";
-			}
-			else 
-			{
-				errMsg += "バンク";
-				errMsg += ('A'+result.errBank);
-				errMsg += "\nMMLコード ";
-				errMsg += std::to_string(result.errPos);
-				errMsg += " 文字目";
-			}
+			CString msg;
+			msg.Format("MML %lld文字目でエラー", errPos);
+			MessageBox(msg);
+			return false;
+		}
+		pcmGenerator->setTone(0, toneData_);
+		pcmGenerator->addCommand(commands);
 
-			if (result.errBank != -2 && result.errPos>=1)
-			{
-				tabBank_.SetCurSel(result.errBank + 1);
-
-				std::string* pStr;
-				if (result.errBank == -1)
-					pStr = &shared_;
-				else
-					pStr = &bank_[result.errBank];
-				txtMml_.SetWindowText(pStr->c_str());
-
-				txtMml_.SetSel((int)result.errPos-1, (int)result.errPos);
-				txtMml_.SetFocus();
-			}
-			using namespace MmlUtility;
-			std::unordered_map< ErrorReson, const char*> errDetail;
-			errDetail[ErrorReson::NoError] = "success";
-			errDetail[ErrorReson::UnknownCommand] = "不明なコマンド";
-			errDetail[ErrorReson::IllegalCommandNextSlur] = "スラーのあとに続けれるコマンドではない";
-			errDetail[ErrorReson::IllegalValue] = "値が不正";
-			errDetail[ErrorReson::IllegalValueTempo] = "テンポの値が不正";
-			errDetail[ErrorReson::IllegalValueLength] = "長さの指定が不正";
-			errDetail[ErrorReson::IllegalFormatEnvelopeCommand] = "エンベロープコマンドの書式が間違っている";
-			errDetail[ErrorReson::IllegalParameterRange] = "パラメータの値が範囲外";
-			errDetail[ErrorReson::SlurNotClose] = "スラーが繋がってないまま終わってる";
-			errDetail[ErrorReson::ToneLevelOutOfRangeLower] = "音程が低すぎる";
-			errDetail[ErrorReson::ToneLevelOutOfRangeUpper] = "音程が高すぎる";
-			errDetail[ErrorReson::WaveNoOutOfRange] = "音色番号が範囲外";
-			errDetail[ErrorReson::WaveDefineToneNoOutofRange] = "使えない音色番号";
-			errDetail[ErrorReson::WaveDefineNoneDuty] = "デューティー比指定がない";
-			errDetail[ErrorReson::WaveDefineOverDuties] = "ーティー比指定が多すぎる";
-			errDetail[ErrorReson::PanOutOfRange] = "パン値が範囲外";
-			errDetail[ErrorReson::VolumeOutOfRange] = "ボリューム値が範囲外";
-			errDetail[ErrorReson::RequireNumberError] = "数値が入るところなのに数値じゃない";
-			errMsg += "\n";
-			errMsg += errDetail[result.result];
-
-			MessageBox(errMsg.c_str());
+		if (pcmGenerator->ready(sampleRate) == false)
+		{
+			MessageBox("出力に必要なデータが足りません");
+			return false;
 		}
 
-		return ret;
+		dest.data = pcmGenerator->generate<2>();
+		pcmGenerator = nullptr;
+		return true;
 
 	};
-	MmlUtility::GenerateMmlToPcmResult result;
+	std::shared_ptr<MmlUtility::WavGenerator<>> generator;
 	bool ret = false;
 	switch (cboFloatType_.GetCurSel())
 	{
-	case 0: ret = genWrapper(CFixFloat<>(), result); break;
-	case 1: ret = genWrapper(float(0.0f), result); break;
-	case 2: ret = genWrapper(double(0.0), result); break;
+	case 0: ret = genWrapper(std::make_unique<MmlUtility::WavGenerator<>>()); break;
+	case 1: ret = genWrapper(std::make_unique<MmlUtility::WavGenerator<float>>()); break;
+	case 2: ret = genWrapper(std::make_unique<MmlUtility::WavGenerator<double>>()); break;
 	}
-	if (result.result!= MmlUtility::ErrorReson::NoError)
+	if (!ret)
 		return false;
 
 	WAVEFORMATEX& format = dest.format;
-	dest.data.swap(result.pcm);
 	memset(&format, 0, sizeof(format));
 	format.wFormatTag = WAVE_FORMAT_PCM;
 	format.nChannels = 2;
@@ -323,16 +265,6 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 	return true;
 }
 
-struct WaveOutParam {
-	HWAVEOUT hWaveOut_;
-	std::vector<int16_t> pcmBuffer_;
-	bool loopPlay_ = false;
-	size_t playOffsetSamples_ = 0;
-	WAVEHDR nowHeader;
-};
-
-
-
 void CALLBACK waveOutCallbackProc(
 	HWAVEOUT  hwo,
 	UINT      uMsg,
@@ -341,73 +273,34 @@ void CALLBACK waveOutCallbackProc(
 	DWORD_PTR dwParam2
 )
 {
-	auto param = (WaveOutParam*)dwInstance;
-
-	bool isWrite = false;
-	switch (uMsg)
-	{
-	case WOM_OPEN:
-	{
-		param->playOffsetSamples_ = 0;
-		break;
-	}
-	case WOM_DONE:
-	{
-		param->playOffsetSamples_ = 0;
-		isWrite = param->loopPlay_;
-		break;
-	}
-	case WOM_CLOSE:
-		param->hWaveOut_ = NULL;
-		param->pcmBuffer_.clear();
-		break;
-	}
-
-	if (isWrite)
-	{
-		WAVEHDR& header = param->nowHeader;
-		memset(&header, 0, sizeof(header));
-		auto offsets = param->playOffsetSamples_ * 2;
-		header.lpData = (char*)param->pcmBuffer_.data() + (offsets * sizeof(int16_t));
-		header.dwBufferLength = (DWORD)((param->pcmBuffer_.size() - offsets) * sizeof(int16_t));
-		header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
-		header.dwLoops = 1;
-
-		//MMSYSERR_NOMEM
-		auto result = waveOutUnprepareHeader(hwo, &param->nowHeader, sizeof(param->nowHeader));
-		if (result != 0)
-			OutputDebugString("failed waveOutUnprepareHeader.");
-		result = waveOutPrepareHeader(hwo, &header, sizeof(header));
-		if (result != 0)
-			OutputDebugString("failed waveOutPrepareHeader.");
-		result = waveOutWrite(hwo, &header, sizeof(header));
-		if (result != 0)
-			OutputDebugString("failed waveOutWrite.");
-	}
-
-
 }
 
 void CMml2WavDlg::OnBnClickedBtnPlay()
 {
-	OnBnClickedBtn();
-
 	WavData data;
 	if (!genWavData(data))
 		return;
 
-	auto playParam = new WaveOutParam();
-	playParam->hWaveOut_ = nullptr;
-	playParam->pcmBuffer_.clear();
-	playParam->pcmBuffer_.insert(playParam->pcmBuffer_.end(), data.data.begin(), data.data.end());
-	playParam->loopPlay_ = chkLoop_.GetCheck() != 0;
+	pcmBuffer_.clear();
+	pcmBuffer_.insert(pcmBuffer_.end(), data.data.begin(), data.data.end());
+	WAVEHDR header = {};
+	memset(&header, 0, sizeof(header));
+	header.lpData = (char*)pcmBuffer_.data();
+	header.dwBufferLength = (DWORD)(pcmBuffer_.size() * sizeof(int16_t));
+	header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
+	header.dwLoops = 1;
+
+
+	if (hWaveOut_)
+		waveOutClose(hWaveOut_);
+	hWaveOut_ = nullptr;
 
 	auto result =  waveOutOpen(
-		&playParam->hWaveOut_,
+		&hWaveOut_,
 		-1,
 		&data.format,
 		(DWORD_PTR)waveOutCallbackProc,
-		(DWORD_PTR)playParam,
+		0,
 		CALLBACK_FUNCTION
 	);
 	if (result != 0)
@@ -415,53 +308,13 @@ void CMml2WavDlg::OnBnClickedBtnPlay()
 		MessageBox("Wav出力デバイスのオープンに失敗しました");
 		return;
 	}
-	playParam->playOffsetSamples_ =  chkFromCurrent_.GetCheck() !=0 ? data.startSample : 0;
-
-
-	WAVEHDR& header = playParam->nowHeader;
-	memset(&header, 0, sizeof(header));
-	auto offsets = playParam->playOffsetSamples_ * 2;
-	header.lpData = (char*)playParam->pcmBuffer_.data() + (offsets * sizeof(int16_t));
-	header.dwBufferLength = (DWORD)((playParam->pcmBuffer_.size() - offsets) * sizeof(int16_t));
-	header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
-	header.dwLoops = 1;
-
-	result = waveOutPrepareHeader(playParam->hWaveOut_, &header, sizeof(header));
-	if (result != 0)
+	result = waveOutPrepareHeader(hWaveOut_, &header, sizeof(header));
+	if (result!=0)
 		OutputDebugString("failed waveOutPrepareHeader.");
-	
-	result = waveOutWrite(playParam->hWaveOut_, &header, sizeof(header));
+
+	result = waveOutWrite(hWaveOut_, &header, sizeof(header));
 	if (result != 0)
 		OutputDebugString("failed waveOutWrite.");
-
-	playing_.push_back(playParam);
-}
-
-
-void CMml2WavDlg::OnBnClickedBtn()
-{
-	for (auto param : playing_)
-	{
-		if (param->hWaveOut_)
-		{
-			param->loopPlay_ = 0;
-			waveOutReset(param->hWaveOut_);
-			waveOutUnprepareHeader(param->hWaveOut_, &param->nowHeader, sizeof(param->nowHeader));
-			waveOutClose(param->hWaveOut_);
-		}
-	}
-
-	while (playing_.size() > 0)
-	{
-		if (playing_[0]->hWaveOut_ == NULL)
-		{
-			playing_.erase(playing_.begin());
-		}
-		else
-		{
-			Sleep(100);
-		}
-	}
 }
 
 
@@ -561,82 +414,3 @@ void CMml2WavDlg::OnBnClickedBtnOutput()
 	fclose(fp);
 
 }
-
-
-void CMml2WavDlg::OnTcnSelchangeTabBank(NMHDR* pNMHDR, LRESULT* pResult)
-{
-	auto index = tabBank_.GetCurSel();
-	std::string* pStr;
-	if (index == 0)
-		pStr = &shared_;
-	else
-		pStr = &bank_[index-1];
-	txtMml_.SetWindowText(pStr->c_str());
-	*pResult = 0;
-}
-
-
-void CMml2WavDlg::OnEnChangeTxtMml()
-{
-	CString str;
-	txtMml_.GetWindowText(str);
-	auto index = tabBank_.GetCurSel();
-	if(index==0)
-		shared_= str;
-	else
-		bank_[index-1] = str;
-}
-
-
-void CMml2WavDlg::OnBnClickedButton1()
-{
-	int toneNo = cboToneNumber_.GetCurSel();
-	if(toneData_.dutyRatio.empty())
-		MessageBox("Duty比が未設定");
-	if (toneData_.randomRange < 0 || toneData_.randomRange>100)
-	{
-		MessageBox("ノイズ範囲が範囲外（0～100%）");
-		return;
-	}
-
-	auto float2Str = [](float v)
-	{
-		auto str = std::to_string(v);
-		if (str.find('.') != std::string::npos)
-		{
-			char last = 0;
-			do {
-				last = str[str.length() - 1];
-				if (last == '0' || last == '.')
-					str.resize(str.length() - 1);
-			} while (last == '0');
-		}
-		return str;
-	};
-
-	std::string waveCmd = "@W";
-	waveCmd += ('0' + toneNo);
-	waveCmd += ':';
-	waveCmd += ('0' + (int)toneData_.curve);
-
-	if (toneData_.randomRange != 0)
-	{
-		waveCmd += 'R';
-		waveCmd += float2Str(toneData_.randomRange);
-	}
-	if (toneData_.cycle != 0)
-	{
-		waveCmd += 'C';
-		waveCmd += float2Str(toneData_.cycle);
-	}
-	for (auto duty : toneData_.dutyRatio)
-	{
-		waveCmd += ':';
-		waveCmd += float2Str(duty);
-	}
-
-	txtMml_.ReplaceSel(waveCmd.c_str());
-
-
-}
-

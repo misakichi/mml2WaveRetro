@@ -13,14 +13,12 @@ inline MmlUtility::WavGenerator<CalcT>::WavGenerator()
 #endif
 }
 
-#define NUM_CHECK(ch)	if((ch)<'0' || (ch)>'9') return genError(ErrorReson::RequireNumberError)
-
 template<typename CalcT>
-inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCommand>& dest, size_t* errorPoint, ErrorReson* reason, size_t current)
+inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCommand>& dest, size_t* errorPoint, ErrorReson* reason)
 {
 	static const CalcType toneScaleFreq[] =
 	{
-		CalcType(32.703/2), //C  ド			 //O0
+		CalcType(32.703/2), //C  ド
 		CalcType(34.648/2), //C#
 		CalcType(36.708/2), //D
 		CalcType(38.891/2), //D#
@@ -32,7 +30,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(27.500), //A  ラ
 		CalcType(29.135), //A#
 		CalcType(30.868), //B
-		CalcType(32.703), //C  ド			  //1
+		CalcType(32.703), //C  ド
 		CalcType(34.648), //C#
 		CalcType(36.708), //D
 		CalcType(38.891), //D#
@@ -44,7 +42,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(55.000), //A  ラ
 		CalcType(58.270), //A#
 		CalcType(61.735), //B
-		CalcType(65.406), //C  ド				//2
+		CalcType(65.406), //C  ド
 		CalcType(69.296), //C#
 		CalcType(73.416), //D
 		CalcType(77.782), //D#
@@ -56,7 +54,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(110.000), //A  ラ
 		CalcType(116.541), //A#
 		CalcType(123.471), //B
-		CalcType(130.813), //C  ド			 //3
+		CalcType(130.813), //C  ド
 		CalcType(138.591), //C#
 		CalcType(146.832), //D
 		CalcType(155.563), //D#
@@ -68,7 +66,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(220.000), //A  ラ
 		CalcType(233.082), //A#
 		CalcType(246.942), //B
-		CalcType(261.626), //C  ド			  //4
+		CalcType(261.626), //C  ド
 		CalcType(277.183), //C#
 		CalcType(293.665), //D
 		CalcType(311.127), //D#
@@ -80,7 +78,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(440.000), //A  ラ
 		CalcType(466.164), //A#
 		CalcType(493.883), //B
-		CalcType(523.251), //C  ド			 //5
+		CalcType(523.251), //C  ド
 		CalcType(554.365), //C#
 		CalcType(587.330), //D
 		CalcType(622.254), //D#
@@ -92,7 +90,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(880.000),  //A  ラ
 		CalcType(932.328),  //A#
 		CalcType(987.767),  //B
-		CalcType(1046.502), //C  ド		   //6
+		CalcType(1046.502), //C  ド
 		CalcType(1108.731), //C#
 		CalcType(1174.659), //D
 		CalcType(1244.508), //D#
@@ -104,7 +102,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(1760.000), //A  ラ
 		CalcType(1864.655), //A#
 		CalcType(1975.533), //B
-		CalcType(2093.005), //C  ド		   //7
+		CalcType(2093.005), //C  ド
 		CalcType(2217.461), //C#
 		CalcType(2349.318), //D
 		CalcType(2489.016), //D#
@@ -197,31 +195,13 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 	while (p < end)
 	{
 		auto c = *p++;
-		//コメント *<comment>*
-		if (c == '*')
-		{
-			while (p < end)
-			{
-				c = *p++;
-				if (c == '*')
-					break;
-			}
-			if (c == '*')
-				continue;
-		}
-		//改行無視
-		else if (c == '\r' || c == '\n')
-		{
-			continue;
-		}
-		else if ((c >= 'A' && c <= 'G') || c=='X' || c == 'R' || c == 'N')
+		if ((c >= 'A' && c <= 'G') || c=='X' || c == 'R' || c == 'N')
 		{
 			TypedCommand cmd;
 			cmd.command = TypedCommand::ECommand::ToneNote;
 
 			if (c == 'X')
 			{
-				NUM_CHECK(*p);
 				cmd.note.toneFreq = getNumF();
 				//長さ変更がある
 				if (*p == ':')
@@ -229,7 +209,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			}
 			else if (c == 'N')
 			{
-				NUM_CHECK(*p);
 				int  offset= getNumI();
 				if (offset < 0)
 					return genError(ErrorReson::ToneLevelOutOfRangeLower);
@@ -279,22 +258,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				if (offset >= sizeof(toneScaleFreq)/sizeof(toneScaleFreq[0]))
 					return genError(ErrorReson::ToneLevelOutOfRangeUpper);
 
-#if 0
-				double hz = 440;
-				auto shift = offset;
-				shift -= 48;
-				shift -= 12;
-				shift += 3;
-				if (shift < 0) {
-					hz /= pow((double)2, (double)abs(shift) / 12);
-				}
-				else if (shift > 0) {
-					hz *= pow((double)2, (double)(shift) / 12);
-				}
-				cmd.note.toneFreq = hz;
-#else
 				cmd.note.toneFreq = toneScaleFreq[offset];
-#endif
 			}
 			if (slurFromCmdIndex != -1 && cmd.note.toneFreq==0)
 			{
@@ -303,15 +267,14 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			}
 
 
+
 			int len = getNumI();
 			if (len == 0)
-			{
 				len = state.len;
-			}
-			else
-			{
-				len = NoteLengthResolutio / len;
-			}
+
+			len = NoteLengthResolutio / len;
+
+			int addPeriod = 0;
 			if (*p == '.')
 			{
 				p++;
@@ -339,7 +302,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		}
 		else if (c == 'O')
 		{
-			NUM_CHECK(*p);
 			state.oct = getNumI();
 		}
 		else if (c == '<')
@@ -352,18 +314,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		}
 		else if (c == 'L')
 		{
-			NUM_CHECK(*p);
 			state.len = getNumI();
-			if (state.len == 0)
-				return genError(ErrorReson::IllegalValueLength);
-			state.len = NoteLengthResolutio / state.len;
-
-			if (*p == '.')
-			{
-				p++;
-				state.len += state.len / 2;
-			}
-
 		}
 		else if (slurFromCmdIndex != -1)
 		{
@@ -374,7 +325,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		{
 			TypedCommand cmdPan;
 			cmdPan.command = TypedCommand::ECommand::Pan;
-			NUM_CHECK(*p);
 			cmdPan.pan = getNumI();
 			if (cmdPan.pan < 0 || cmdPan.pan>256)
 				return genError(ErrorReson::PanOutOfRange);
@@ -384,7 +334,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		{
 			TypedCommand cmdVol;
 			cmdVol.command = TypedCommand::ECommand::Volume;
-			NUM_CHECK(*p);
 			cmdVol.vol = getNumI();
 			if (cmdPan.vol < 0 || cmdPan.vol>255)
 				return genError(ErrorReson::VolumeOutOfRange);
@@ -395,10 +344,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		{
 			TypedCommand cmdTempo;
 			cmdTempo.command = TypedCommand::ECommand::Tempo;
-			NUM_CHECK(*p);
 			cmdTempo.bpm = getNumI();
-			if (cmdTempo.bpm == 0)
-				return genError(ErrorReson::IllegalValueTempo);
 			commands.push_back(cmdTempo);
 
 		}
@@ -409,9 +355,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				TypedCommand cmdType;
 				cmdType.command = TypedCommand::ECommand::ToneType;
 				cmdType.waveCurve = getNumI();
-				if (cmdType.waveCurve < 0 || cmdType.waveCurve >9)
-					genError(ErrorReson::WaveNoOutOfRange);
-
 				commands.push_back(cmdType);
 			}
 			else if (*p == 'S')
@@ -419,7 +362,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				++p;
 				TypedCommand cmdTempo;
 				cmdTempo.command = TypedCommand::ECommand::SlurCrossPoint;
-				NUM_CHECK(*p);
 				auto base = getNumF();
 				if (base < 1)
 					return genError(ErrorReson::IllegalValue);
@@ -432,74 +374,24 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				++p;
 				TypedCommand cmdType;
 				cmdType.command = TypedCommand::ECommand::Envelope;
-				NUM_CHECK(*p);
 				cmdType.envelope.atackTime = getNumI();
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
 				cmdType.envelope.decayTime = getNumI();
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
 				cmdType.envelope.releaseTime = getNumI();
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
 				cmdType.envelope.atackLevel = getNumI();
-				if (cmdType.envelope.atackLevel > 255)
+				if(cmdType.envelope.atackLevel>255)
 					return genError(ErrorReson::IllegalParameterRange);
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
 				cmdType.envelope.sustainLevel = getNumI();
 				if (cmdType.envelope.sustainLevel > 255)
 					return genError(ErrorReson::IllegalParameterRange);
 				commands.push_back(cmdType);
-			}
-			else if (*p == 'W')
-			{
-				//音色定義
-				++p;
-				TypedCommand cmdType;
-				cmdType.command = TypedCommand::ECommand::WaveDefine;
-				NUM_CHECK(*p);
-				cmdType.wave.no = getNumI();
-				if (cmdType.wave.no < 0 || cmdType.wave.no >= ToneMax)
-				{
-					return genError(ErrorReson::WaveDefineToneNoOutofRange);
-				}
-				if (*p++ != ':')
-					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
-				cmdType.wave.type = getNumI();
-				cmdType.wave.random = 0;
-				if (*p == 'R')
-				{
-					++p;
-					NUM_CHECK(*p);
-					cmdType.wave.random = getNumF();
-				}
-				cmdType.wave.cycle = 0;
-				if (*p == 'C')
-				{
-					++p;
-					NUM_CHECK(*p);
-					cmdType.wave.cycle = getNumF();
-				}
-				int duties = 0;
-				while (*p == ':')
-				{
-					++p;
-					NUM_CHECK(*p);
-					cmdType.wave.duty[duties] = getNumF();
-					if (++duties == decltype(cmdType.wave)::MaxDuties)
-						return genError(ErrorReson::WaveDefineOverDuties);
-				}
-				if (duties == 0)
-					return genError(ErrorReson::WaveDefineNoneDuty);
-				cmdType.wave.duties = duties;
-				commands.push_back(cmdType);
-
 			}
 		}
 		else
@@ -508,12 +400,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			return genError(ErrorReson::UnknownCommand);
 		}
 
-		auto offset = p - mml;
-		if (commands.size()>0 && current < offset)
-		{
-			current = SIZE_T_MAX;
-			commands.back().isCurrent = 1;
-		}
 	}
 
 	if (slurFromCmdIndex != -1)
@@ -536,7 +422,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::ready(uint32_t sampleRate)
 	if (tones_.empty())
 		return false;
 	for (auto& tone : tones_)
-		if (tone.dutyRatio.empty())
+		if (tone.second.dutyRatio.empty())
 			return false;
 	if(commands_.empty())
 		return false;
@@ -564,7 +450,7 @@ inline void MmlUtility::WavGenerator<CalcT>::addCommand(std::vector<TypedCommand
 
 template<typename CalcT>
 template<int Channels>
-inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* currentOffset)
+inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate()
 {
 	static_assert(Channels == 1 || Channels == 2);
 
@@ -595,10 +481,6 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 		const auto& cmd = commands_[status_.commandIdx];
 		if (cmd.command != TypedCommand::ECommand::ToneNote)
 		{
-			if (currentOffset && cmd.isCurrent != 0)
-			{
-				*currentOffset = result.size() / Channels;
-			}
 			switch (cmd.command)
 			{
 			case TypedCommand::ECommand::Volume:
@@ -623,15 +505,6 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				status_.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
 				status_.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
 				break;
-			case TypedCommand::ECommand::WaveDefine:
-			{
-				MmlUtility::ToneData& tone = tones_[cmd.wave.no];
-				tone.curve = decltype(tone.curve)(cmd.wave.type);
-				tone.cycle= cmd.wave.cycle;
-				tone.randomRange = cmd.wave.random;
-				tone.dutyRatio.clear();
-				tone.dutyRatio.insert(tone.dutyRatio.end(), cmd.wave.duty, cmd.wave.duty + cmd.wave.duties);
-			}
 			default:
 				break;
 			}
@@ -644,7 +517,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			//ランダム周波数時は次の半分の周波数を決定
 			if (tone->randomRange != 0)
 			{
-				auto random = (CalcType(100) - CalcType(tone->randomRange)) + (CalcType(rand()) / RAND_MAX) * (CalcType(tone->randomRange) * 2);
+				auto random = CalcType(100 - tone->randomRange) + (CalcType(rand()) / RAND_MAX) * (tone->randomRange * 2);
 				auto freq = baseFreqSamples * random / 200;
 				status_.waveFreqDiv2 = freq;
 
@@ -654,17 +527,13 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			{
 				auto duty = tone->dutyRatio[status_.dutyIndex % tone->dutyRatio.size()];
 				auto dutyCt = CalcType(status_.waveStep == 0 ? duty : 100 - duty);
-				status_.waveFreqDiv2 = baseFreqSamples * dutyCt / 100;
+				status_.waveFreqDiv2 = baseFreqSamples * duty / 100;
 
 			}
 		};
 
 		if (status_.noteProcedSamples == status_.noteSamples)
 		{
-			if (currentOffset && cmd.isCurrent != 0)
-			{
-				*currentOffset = result.size() / Channels;
-			}
 			//新規コマンドです
 			uint64_t oldSamples = 0;
 			uint64_t samples = 0;
@@ -688,7 +557,6 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				samples += li.samples;
 
 			status_.dutyIndex = 0;
-			status_.dutyCycleRq = 0;
 			status_.noteSamples = int(samples- oldSamples);
 			status_.noteProcedSamples = 0;
 			status_.toneOff = cmd.note.toneFreq == 0;
@@ -724,9 +592,6 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			//半周期が終わった
 			if (CalcType(status_.waveDiv2InSample) > status_.waveFreqDiv2)
 			{
-				//半周期開始
-				status_.waveDiv2InSample -= status_.waveFreqDiv2;
-
 				//スラーで変動するので変数に入れる
 				auto baseFreqSamples = status_.baseFreqSamples;
 				if (status_.slurTo != 0)
@@ -752,9 +617,8 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 					else
 					{
 						//毎回切替時はDuty比変更
-						if (toneSwitchSample == 0 || status_.dutyCycleRq!=0)
+						if (toneSwitchSample == 0)
 						{
-							status_.dutyCycleRq = 0;
 							++status_.dutyIndex;
 						}
 					}
@@ -765,6 +629,9 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 
 
 				div2Set(tone, baseFreqSamples);
+
+				//半周期開始
+				status_.waveDiv2InSample = 0;
 
 			}
 			else
@@ -786,7 +653,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			//時間によるDuty比切り替え
 			if (toneSwitchSample!=0 && toneSwitchSample * (status_.dutyIndex + 1) < status_.noteProcedSamples)
 			{
-				status_.dutyCycleRq = 1;
+				++status_.dutyIndex;
 			}
 
 
@@ -882,7 +749,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			result.push_back(sample * (status_.pan) / 256);
 		}
 
-		status_.waveDiv2InSample+=1;
+		status_.waveDiv2InSample++;
 		status_.noteProcedSamples++;
 		if (status_.noteProcedSamples == status_.noteSamples)
 			status_.commandIdx++;
@@ -895,45 +762,36 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 
 
 template<unsigned Channels, typename CalcT, int Banks>
-bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
+bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate)
 {
 	static_assert(Banks > 0);
 	static_assert(Channels == 1 || Channels == 2);
-	dest.pcmStartOffset = 0;
+
 	std::vector<int16_t> result;
 	//基本値
 	ToneData defaultTone[10] = {};
 	defaultTone[0].curve = EWaveCurveType::Rectangle;
 	defaultTone[0].dutyRatio.push_back(50);
-
 	defaultTone[1].curve = EWaveCurveType::Triangle;
 	defaultTone[1].dutyRatio.push_back(50);
-
 	defaultTone[2].curve = EWaveCurveType::Saw;
 	defaultTone[2].dutyRatio.push_back(50);
-
 	defaultTone[3].curve = EWaveCurveType::Sin;
 	defaultTone[3].dutyRatio.push_back(50);
-
 	defaultTone[4].curve = EWaveCurveType::Noise;
 	defaultTone[4].dutyRatio.push_back(50);
-
 	defaultTone[5].curve = EWaveCurveType::Rectangle;
 	defaultTone[5].dutyRatio.push_back(33.33333333f);
-
 	defaultTone[6].curve = EWaveCurveType::Rectangle;
 	defaultTone[6].dutyRatio.push_back(25);
-
 	defaultTone[7].curve = EWaveCurveType::Rectangle;
 	defaultTone[7].dutyRatio.push_back(12.5f);
-
 	defaultTone[8].curve = EWaveCurveType::Rectangle;
 	defaultTone[8].dutyRatio.push_back(50);
 	defaultTone[8].randomRange = 50;
-
 	defaultTone[9].curve = EWaveCurveType::Triangle;
 	defaultTone[9].dutyRatio.push_back(50);
-	defaultTone[9].randomRange = 50;
+	defaultTone[8].randomRange = 50;
 
 	//デフォルトセッティング
 	//120bpm
@@ -951,42 +809,18 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 	{
 		WavGenerator<CalcT> generator;
 		std::vector<WavGenerator<CalcT>::TypedCommand> commands;
-		std::string mml = defaultSetting;
-		auto defaultSize = mml.length();
-		mml += prepareSharedMml;
-		auto sharedSize = mml.length();
-		mml += bankMml[i];
-
+		std::string mml = prepareSharedMml + bankMml[i];
 		for (int i = 0; i < 10; i++)
 			generator.setTone(i, defaultTone[i]);
 
 		generator.setVolumeMax(255);
-		if (!generator.compileMml(mml.c_str(), commands, &dest.errPos, &dest.result, currentCursor + sharedSize))
+		generator.ready(sampleRate);
+		if (!generator.compileMml(mml.c_str(), commands, &dest.errPos, &dest.result))
 		{
-			if (dest.errPos < defaultSize)
-			{
-				dest.errBank = -2;
-			}
-			else if (dest.errPos < sharedSize)
-			{
-				dest.errBank = -1;
-				dest.errPos -= defaultSize;
-			}
-			else 
-			{
-				dest.errBank = i;
-				dest.errPos -= sharedSize;
-			}
 			return false;
 		}
 		generator.addCommand(commands);
-		generator.ready(sampleRate);
-		size_t* startSample = nullptr;
-		if (i == currentBank)
-		{
-			startSample = &dest.pcmStartOffset;
-		}
-		auto pcm = generator.generate<Channels>(startSample);
+		auto pcm = generator.generate<Channels>();
 		if (pcm.size() > result.size())
 			result.resize(pcm.size());
 		auto dst = result.begin();
@@ -999,5 +833,4 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 	dest.pcm.swap(result);
 
 
-	return true;
 }
