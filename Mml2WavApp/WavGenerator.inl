@@ -433,15 +433,15 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				TypedCommand cmdType;
 				cmdType.command = TypedCommand::ECommand::Envelope;
 				NUM_CHECK(*p);
-				cmdType.envelope.atackTime = getNumI();
+				cmdType.envelope.atackTime = getNumF();
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
 				NUM_CHECK(*p);
-				cmdType.envelope.decayTime = getNumI();
+				cmdType.envelope.decayTime = getNumF();
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
 				NUM_CHECK(*p);
-				cmdType.envelope.releaseTime = getNumI();
+				cmdType.envelope.releaseTime = getNumF();
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
 				NUM_CHECK(*p);
@@ -617,9 +617,9 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				status_.slurCrossPoint = cmd.slurCrossPoint;
 				break;
 			case TypedCommand::ECommand::Envelope:
-				status_.envelopeAtackSamples = msecToSamples(CalcType(cmd.envelope.atackTime));
-				status_.envelopeDecaySamples = msecToSamples(CalcType(cmd.envelope.decayTime));
-				status_.envelopeReleaseSamples = msecToSamples(CalcType(cmd.envelope.releaseTime));
+				status_.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
+				status_.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
+				status_.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
 				status_.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
 				status_.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
 				break;

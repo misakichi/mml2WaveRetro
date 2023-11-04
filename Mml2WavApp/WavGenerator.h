@@ -83,9 +83,9 @@ namespace MmlUtility
 			int SlurToCmdIdx;	//Ÿ‚Ì‰¹‚ÆÚ‘±‚·‚é
 		};
 		struct EnvelopeParam {
-			int atackTime;		//msec
-			int decayTime;		//msec
-			int releaseTime;	//msec
+			CalcType atackTime;		//msec
+			CalcType decayTime;		//msec
+			CalcType releaseTime;	//msec
 			int atackLevel;
 			int sustainLevel;
 		};

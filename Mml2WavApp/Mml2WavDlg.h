@@ -58,29 +58,36 @@ private:
 	afx_msg void OnEnChangeTxtNoise();
 	afx_msg void OnEnChangeTxtDutySwitchTiming();
 	afx_msg void OnBnClickedBtnOutput();
+	afx_msg void OnTcnSelchangeTabBank(NMHDR* pNMHDR, LRESULT* pResult);
+	afx_msg void OnEnChangeTxtMml();
+	afx_msg void OnBnClickedButton1();
+	afx_msg void OnBnClickedBtn();
+	afx_msg void OnBnClickedBtnEnvelopeCmd();
+	afx_msg void OnBnClickedBtnEnvTemplateDefault();
+	afx_msg void OnBnClickedBtnEnvTemplateNone();
+	afx_msg void OnBnClickedBtnEnvTemplateStrongAtack();
+	afx_msg void OnBnClickedBtnEnvTemplateLongRelease();
 
 	void RefreshDutyList();
+	void SetEnvelopeTemplate(int no);
 	bool genWavData(WavData& dest);
 
 	CComboBox cboFloatType_;
 	CComboBox cboSampleRate_;
 	CTabCtrl tabBank_;
+	CComboBox cboToneNumber_;
+	CButton chkLoop_;
+	CButton chkFromCurrent_;
+	CButton chkCurrentBank_;
 
 	std::vector<WaveOutParam*> playing_;
 
 	enum { BANKS=5};
 	std::string shared_;
 	std::array<std::string, BANKS> bank_;
+
 public:
-	afx_msg void OnTcnSelchangeTabBank(NMHDR* pNMHDR, LRESULT* pResult);
-	afx_msg void OnEnChangeTxtMml();
-private:
-	CComboBox cboToneNumber_;
-public:
-	afx_msg void OnBnClickedButton1();
-	afx_msg void OnBnClickedBtn();
-private:
-	CButton chkLoop_;
-public:
-	CButton chkFromCurrent_;
+	afx_msg void OnBnClickedBtnEnvTemplateStrongAtack2();
+	afx_msg void OnBnClickedBtnEnvTemplateLongRelease3();
+	afx_msg void OnBnClickedBtnEnvTemplateLongRelease4();
 };
