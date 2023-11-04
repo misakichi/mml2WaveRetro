@@ -27,6 +27,16 @@ namespace MmlUtility
 		PanOutOfRange,//パン値が範囲外
 		VolumeOutOfRange,//ボリューム値が範囲外
 		RequireNumberError, //数値が入るところなのに数値じゃない
+		IliegalCommandInTuplet,
+		TupletNoteOver,
+		IliegalTupletCloseOnNoTuplet,
+		NoteNothingTupletCloseOnNoTuplet,
+		IliegalTupletOpenInTuplet,
+
+		IlieagalLoopCommandInTuplet,		
+		IlieagalLoopEndNotLoop,
+		LoopNestOver,
+		NotSupportInfinityLoop,
 	};
 
 
@@ -44,6 +54,7 @@ namespace MmlUtility
 		EWaveCurveType curve = EWaveCurveType::Rectangle;
 		float cycle = 0;
 		float randomRange = 0;
+		float levelNoise = 0;
 		std::vector<float> dutyRatio; //通常の波形が50(%)
 	};
 	template<typename CalcT = CFixFloat<int64_t, 16>>
@@ -51,6 +62,7 @@ namespace MmlUtility
 	{
 	public:
 		using CalcType = CalcT;
+
 		MmlCommand() { isCurrent = 0; }
 		MmlCommand(const MmlCommand& src)
 		{
@@ -73,13 +85,15 @@ namespace MmlUtility
 			Pan,			//P
 			ToneType,		//@
 			SlurCrossPoint,	//@S
-			Envelope,		//@E
+			EnvelopeDefine,	//@ED
+			EnvelopeCall,	//@EC
 			WaveDefine,		//@W
+			Loop,
 		};
 
 		struct NoteParam {
 			CalcType toneFreq;	//tone freq.
-			int length;			//NoteLengthResolutio単位の長さ
+			CalcType length;			//NoteLengthResolutio単位の長さ
 			int SlurToCmdIdx;	//次の音と接続する
 		};
 		struct EnvelopeParam {
@@ -88,6 +102,13 @@ namespace MmlUtility
 			CalcType releaseTime;	//msec
 			int atackLevel;
 			int sustainLevel;
+			int no;
+		};
+		struct LoopCommand {
+			int type; //0:start, 1:end, 2:exit
+			int num;
+			int pairIndex;
+			int id;
 		};
 		struct WaveDefine {
 			enum { MaxDuties = 8 };
@@ -95,6 +116,7 @@ namespace MmlUtility
 			int type;
 			int duties;
 			float random;
+			float levelNoise;
 			float cycle;
 			float duty[MaxDuties];
 		};
@@ -105,6 +127,7 @@ namespace MmlUtility
 			WaveDefine wave;
 			uint8_t waveCurve;
 			CalcType slurCrossPoint;
+			LoopCommand loop;
 			int bpm;
 			int vol;
 			int pan; //127=center
@@ -118,12 +141,14 @@ namespace MmlUtility
 	class WavGenerator
 	{
 	public:
-		enum { ToneMax = 10 };
+		enum { ToneMax = 32 };
 		using CalcType = CalcT;
 		using TypedCommand = MmlCommand<CalcType>;
 		WavGenerator();
 		//内部で扱う音の長さの分解能(単位)
 		static constexpr int NoteLengthResolutio = 256; //ex. 256=256分音符まで
+		static constexpr int LoopNestMax = 32;
+		static constexpr int EnvelopeMax = 256;
 
 		inline void setVolumeMax(uint32_t volumeMax) { volumeMax_ = volumeMax; }
 		inline bool compileMml(const char* mml, std::vector<TypedCommand>& dest, size_t* errorPoint = nullptr, ErrorReson* reason = nullptr, size_t current=0);
@@ -162,8 +187,25 @@ namespace MmlUtility
 
 		struct RecentLength {
 			int bpm;
-			uint64_t length;
+			CalcType length;
 			uint64_t samples;
+		};
+		struct Envelope
+		{
+			Envelope& operator=(const Envelope& src) {
+				envelopeAtackSamples = src.envelopeAtackSamples;
+				envelopeDecaySamples = src.envelopeDecaySamples;
+				envelopeReleaseSamples = src.envelopeReleaseSamples;
+				envelopeAtackLevel = src.envelopeAtackLevel;
+				envelopeSustainLevel = src.envelopeSustainLevel;
+				return *this;
+			}
+			CalcType envelopeAtackSamples;		//sample
+			CalcType envelopeDecaySamples;		//sample
+			CalcType envelopeReleaseSamples;	//sample
+			CalcType envelopeAtackLevel;
+			CalcType envelopeSustainLevel;
+
 		};
 		struct PlayStatus {
 			std::vector<RecentLength> recentLength;
@@ -190,12 +232,11 @@ namespace MmlUtility
 			CalcType waveDiv2InSample; //波形の半分プラマイの片方側分がどれだけ処理されたか
 			int isSlurFrom;
 			CalcType slurTo;	//次のノートとスラーの時の、次のノートのbaseFreqSamples
+			
+			Envelope currentEnvelope;
+			Envelope envelopes[EnvelopeMax];
 
-			CalcType envelopeAtackSamples;		//sample
-			CalcType envelopeDecaySamples;		//sample
-			CalcType envelopeReleaseSamples;	//sample
-			CalcType envelopeAtackLevel;
-			CalcType envelopeSustainLevel;
+			int loopNum[LoopNestMax];
 		};
 		PlayStatus status_;
 		uint32_t sampleRate_;

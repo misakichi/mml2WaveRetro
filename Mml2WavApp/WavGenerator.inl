@@ -124,7 +124,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 	
 	struct State {
 		int oct = 4;
-		int len = 4;
+		CalcType len = 4;
 	} state;
 
 	TypedCommand defaultVol;
@@ -148,13 +148,19 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 	commands.push_back(slurCrossCmd);
 
 	TypedCommand defaultADSR;
-	defaultADSR.command = TypedCommand::ECommand::Envelope;
+	defaultADSR.command = TypedCommand::ECommand::EnvelopeDefine;
 	defaultADSR.envelope.atackLevel = volumeMax_;
 	defaultADSR.envelope.sustainLevel = int(volumeMax_ * 0.8);
 	defaultADSR.envelope.atackTime = 20;
 	defaultADSR.envelope.decayTime = 20;
 	defaultADSR.envelope.releaseTime = 20;
+	defaultADSR.envelope.no = -1;
 	commands.push_back(defaultADSR);
+
+	TypedCommand defaultADSRC;
+	defaultADSRC.command = TypedCommand::ECommand::EnvelopeCall;
+	defaultADSRC.envelope.no = 0;
+	commands.push_back(defaultADSRC);
 
 	TypedCommand cmdPan;
 	cmdPan.command = TypedCommand::ECommand::Pan;
@@ -193,6 +199,17 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		return false;
 	};
 
+	//連符管理
+	constexpr int TupletMax = 32;
+	int tupletIndex = -1;
+	TypedCommand tuplet[TupletMax];
+
+	//ループ管理
+	int loopIndex = -1;
+	int loopStartIndex[LoopNestMax] = {};
+
+
+	int lastToneIndex = -1;
 	int slurFromCmdIndex = -1;
 	while (p < end)
 	{
@@ -209,10 +226,92 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			if (c == '*')
 				continue;
 		}
-		//改行無視
-		else if (c == '\r' || c == '\n')
+		//改行スペース無視
+		else if (c == '\r' || c == '\n' || c==' ')
 		{
 			continue;
+		}
+		//連符モード
+		else if (c == '{')
+		{
+			if (tupletIndex >= 0)
+			{
+				return genError(ErrorReson::NoteNothingTupletCloseOnNoTuplet);
+			}
+			tupletIndex = 0;
+		}
+		//連符モード終了
+		else if (c == '}')
+		{
+			if (tupletIndex < 0)
+				return genError(ErrorReson::IliegalTupletCloseOnNoTuplet);
+			if (tupletIndex == 0)
+				return genError(ErrorReson::NoteNothingTupletCloseOnNoTuplet);
+
+			auto tupleLength = tuplet[0].note.length;
+			tupleLength /= tupletIndex;
+			for (auto& tuple : tuplet)
+				tuple.note.length = tupleLength;
+			commands.insert(commands.end(), &tuplet[0], &tuplet[tupletIndex]);
+
+			tupletIndex = -1;
+		}
+		//
+		else if (c == '[')
+		{
+			if(tupletIndex >= 0)
+				return genError(ErrorReson::IlieagalLoopCommandInTuplet);
+			loopIndex++;
+			if (LoopNestMax <= loopIndex)
+				return genError(ErrorReson::LoopNestOver);
+
+			loopStartIndex[loopIndex] = commands.size();
+
+			TypedCommand cmd;
+			cmd.command = TypedCommand::ECommand::Loop;
+			cmd.loop.type = 0;
+			cmd.loop.num = 0;
+			cmd.loop.id = loopIndex;
+			commands.push_back(cmd);
+		}
+		else if (c == ']')
+		{
+			if (tupletIndex >= 0)
+				return genError(ErrorReson::IlieagalLoopCommandInTuplet);
+			if(loopIndex<0)
+				return genError(ErrorReson::IlieagalLoopEndNotLoop);
+
+			int loops = getNumI();
+			if (loops <= 0)
+				return genError(ErrorReson::NotSupportInfinityLoop);
+
+			TypedCommand cmd;
+			cmd.command = TypedCommand::ECommand::Loop;
+			cmd.loop.type = 1;
+			cmd.loop.num = loops;
+			cmd.loop.id = loopIndex;
+			auto loopStart = loopStartIndex[loopIndex];
+			cmd.loop.pairIndex = loopStart;
+			commands[loopStart].loop.pairIndex = commands.size();
+			commands[loopStart].loop.num = loops;
+			commands.push_back(cmd);
+
+			loopIndex--;
+		}
+		//ループ脱出
+		else if (c == ':')
+		{
+			if (tupletIndex >= 0)
+				return genError(ErrorReson::IlieagalLoopCommandInTuplet);
+			TypedCommand cmd;
+			cmd.command = TypedCommand::ECommand::Loop;
+			cmd.loop.type = 2;
+			cmd.loop.num = 0;
+			cmd.loop.id = loopIndex;
+			auto loopStart = loopStartIndex[loopIndex];
+			cmd.loop.pairIndex = loopStart;
+			commands.push_back(cmd);
+
 		}
 		else if ((c >= 'A' && c <= 'G') || c=='X' || c == 'R' || c == 'N')
 		{
@@ -303,17 +402,26 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			}
 
 
-			int len = getNumI();
-			if (len == 0)
+			int iLen = getNumI();
+			CalcType len;
+			if (iLen == 0)
 			{
 				len = state.len;
 			}
 			else
 			{
-				len = NoteLengthResolutio / len;
+				if (tupletIndex >= 0)
+				{
+					return genError(ErrorReson::IliegalCommandInTuplet);
+				}
+				len = CalcType(NoteLengthResolutio) / iLen;
 			}
 			if (*p == '.')
 			{
+				if (tupletIndex >= 0)
+				{
+					return genError(ErrorReson::IliegalCommandInTuplet);
+				}
 				p++;
 				len += len / 2;
 			}
@@ -323,19 +431,24 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				commands[slurFromCmdIndex].note.SlurToCmdIdx = (int)commands.size();
 			}
 
-			if (*p == '&')
+			slurFromCmdIndex = -1;
+			lastToneIndex = (int)commands.size();
+			cmd.note.length = len;
+			cmd.note.SlurToCmdIdx = -1;
+
+			if (tupletIndex >= 0)
 			{
-				p++;
-				slurFromCmdIndex = (int)commands.size();
+				if (tupletIndex >= TupletMax)
+				{
+					return genError(ErrorReson::TupletNoteOver);
+				}
+				tuplet[tupletIndex++] = cmd;
+				
 			}
 			else
 			{
-				slurFromCmdIndex = -1;
+				commands.push_back(cmd);
 			}
-
-			cmd.note.length = len;
-			cmd.note.SlurToCmdIdx = -1;
-			commands.push_back(cmd);
 		}
 		else if (c == 'O')
 		{
@@ -350,13 +463,22 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		{
 			state.oct++;
 		}
+		else if (tupletIndex >= 0)
+		{
+			//連符モード中に音符かオクターブ変更以外は認めない
+			return genError(ErrorReson::IliegalCommandInTuplet);
+		}
+		else if (c == '&')
+		{
+			slurFromCmdIndex = lastToneIndex;
+		}
 		else if (c == 'L')
 		{
 			NUM_CHECK(*p);
 			state.len = getNumI();
 			if (state.len == 0)
 				return genError(ErrorReson::IllegalValueLength);
-			state.len = NoteLengthResolutio / state.len;
+			state.len = CalcType(NoteLengthResolutio) / state.len;
 
 			if (*p == '.')
 			{
@@ -430,31 +552,55 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			else if (*p == 'E')
 			{	//エンベロープ
 				++p;
-				TypedCommand cmdType;
-				cmdType.command = TypedCommand::ECommand::Envelope;
-				NUM_CHECK(*p);
-				cmdType.envelope.atackTime = getNumF();
-				if (*p++ != ':')
-					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
-				cmdType.envelope.decayTime = getNumF();
-				if (*p++ != ':')
-					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
-				cmdType.envelope.releaseTime = getNumF();
-				if (*p++ != ':')
-					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
-				cmdType.envelope.atackLevel = getNumI();
-				if (cmdType.envelope.atackLevel > 255)
-					return genError(ErrorReson::IllegalParameterRange);
-				if (*p++ != ':')
-					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
-				NUM_CHECK(*p);
-				cmdType.envelope.sustainLevel = getNumI();
-				if (cmdType.envelope.sustainLevel > 255)
-					return genError(ErrorReson::IllegalParameterRange);
-				commands.push_back(cmdType);
+				if (*p == 'D')
+				{
+					++p;
+					TypedCommand cmdType;
+					cmdType.command = TypedCommand::ECommand::EnvelopeDefine;
+					NUM_CHECK(*p);
+					cmdType.envelope.no = getNumI();
+					if (cmdType.envelope.no < 0 || cmdType.envelope.no >= EnvelopeMax)
+					{
+						return genError(ErrorReson::IllegalParameterRange);
+					}
+					if (*p++ != ':')
+						return genError(ErrorReson::IllegalFormatEnvelopeCommand);
+					NUM_CHECK(*p);
+					cmdType.envelope.atackTime = getNumF();
+					if (*p++ != ':')
+						return genError(ErrorReson::IllegalFormatEnvelopeCommand);
+					NUM_CHECK(*p);
+					cmdType.envelope.decayTime = getNumF();
+					if (*p++ != ':')
+						return genError(ErrorReson::IllegalFormatEnvelopeCommand);
+					NUM_CHECK(*p);
+					cmdType.envelope.releaseTime = getNumF();
+					if (*p++ != ':')
+						return genError(ErrorReson::IllegalFormatEnvelopeCommand);
+					NUM_CHECK(*p);
+					cmdType.envelope.atackLevel = getNumI();
+					if (cmdType.envelope.atackLevel > 255)
+						return genError(ErrorReson::IllegalParameterRange);
+					if (*p++ != ':')
+						return genError(ErrorReson::IllegalFormatEnvelopeCommand);
+					NUM_CHECK(*p);
+					cmdType.envelope.sustainLevel = getNumI();
+					if (cmdType.envelope.sustainLevel > 255)
+						return genError(ErrorReson::IllegalParameterRange);
+					commands.push_back(cmdType);
+				}
+				else
+				{
+					TypedCommand cmdType;
+					cmdType.command = TypedCommand::ECommand::EnvelopeCall;
+					NUM_CHECK(*p);
+					cmdType.envelope.no = getNumI();
+					if (cmdType.envelope.no < 0 || cmdType.envelope.no >= EnvelopeMax)
+					{
+						return genError(ErrorReson::IllegalParameterRange);
+					}
+					commands.push_back(cmdType);
+				}
 			}
 			else if (*p == 'W')
 			{
@@ -473,11 +619,18 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				NUM_CHECK(*p);
 				cmdType.wave.type = getNumI();
 				cmdType.wave.random = 0;
+				cmdType.wave.levelNoise = 0;
 				if (*p == 'R')
 				{
 					++p;
 					NUM_CHECK(*p);
 					cmdType.wave.random = getNumF();
+				}
+				if (*p == 'N')
+				{
+					++p;
+					NUM_CHECK(*p);
+					cmdType.wave.levelNoise = getNumF();
 				}
 				cmdType.wave.cycle = 0;
 				if (*p == 'C')
@@ -592,7 +745,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 		{
 			return result;
 		}
-		const auto& cmd = commands_[status_.commandIdx];
+		const TypedCommand& cmd = commands_[status_.commandIdx];
 		if (cmd.command != TypedCommand::ECommand::ToneNote)
 		{
 			if (currentOffset && cmd.isCurrent != 0)
@@ -616,12 +769,32 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			case TypedCommand::ECommand::SlurCrossPoint:
 				status_.slurCrossPoint = cmd.slurCrossPoint;
 				break;
-			case TypedCommand::ECommand::Envelope:
-				status_.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
-				status_.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
-				status_.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
-				status_.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
-				status_.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
+			case TypedCommand::ECommand::EnvelopeDefine:
+				{
+					if (cmd.envelope.no >= 0)
+					{
+						auto& dstEnv = status_.envelopes[cmd.envelope.no];
+						dstEnv.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
+						dstEnv.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
+						dstEnv.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
+						dstEnv.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
+						dstEnv.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
+					}
+					else
+					{
+						for (auto& dstEnv : status_.envelopes)
+						{
+							dstEnv.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
+							dstEnv.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
+							dstEnv.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
+							dstEnv.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
+							dstEnv.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
+						}
+					}
+				}
+				break;
+			case TypedCommand::ECommand::EnvelopeCall:
+				status_.currentEnvelope = status_.envelopes[cmd.envelope.no];
 				break;
 			case TypedCommand::ECommand::WaveDefine:
 			{
@@ -629,9 +802,41 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				tone.curve = decltype(tone.curve)(cmd.wave.type);
 				tone.cycle= cmd.wave.cycle;
 				tone.randomRange = cmd.wave.random;
+				tone.levelNoise = cmd.wave.levelNoise;
 				tone.dutyRatio.clear();
 				tone.dutyRatio.insert(tone.dutyRatio.end(), cmd.wave.duty, cmd.wave.duty + cmd.wave.duties);
 			}
+			case TypedCommand::ECommand::Loop:
+				{
+					switch (cmd.loop.type)
+					{
+					case 0:
+						//start
+						status_.loopNum[cmd.loop.id] = cmd.loop.num;
+						break;
+					case 1:
+						//end
+						if (status_.loopNum[cmd.loop.id] > 0)
+						{
+							--status_.loopNum[cmd.loop.id];
+						}
+						if (status_.loopNum[cmd.loop.id] != 0)
+						{
+							status_.commandIdx = cmd.loop.pairIndex + 1;
+							continue;
+						}
+						break;
+					case 2:
+						//exit
+						if (status_.loopNum[cmd.loop.id] <= 1)
+						{
+							auto endIdx = commands_[cmd.loop.pairIndex].loop.pairIndex;
+							status_.commandIdx = endIdx;
+						}
+						break;
+					}
+					break;
+				}
 			default:
 				break;
 			}
@@ -682,7 +887,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			//bpm=1分間の四分音符数
 			//length=分解能単位の長さ
 			//bpm * 4 / length 
-			lengthInfo.samples = sampleRate_ * 60 * 4* lengthInfo.length / NoteLengthResolutio / lengthInfo.bpm;
+			lengthInfo.samples = CalcType(sampleRate_) * 60 * 4* lengthInfo.length / NoteLengthResolutio / lengthInfo.bpm;
 		
 			for (auto& li : status_.recentLength)
 				samples += li.samples;
@@ -840,34 +1045,40 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			}
 			//ボリューム値ADSRによる音量調整
 			auto fNowSample = CalcType(status_.noteProcedSamples);
-			CalcType adsr = status_.envelopeSustainLevel;
-			if (fNowSample < status_.envelopeAtackSamples)
+			const auto& envelope = status_.currentEnvelope;
+			CalcType adsr = envelope.envelopeSustainLevel;
+			if (fNowSample < envelope.envelopeAtackSamples)
 			{
 				//A
 				if (status_.isSlurFrom == 0)
 				{
-					adsr = fNowSample / status_.envelopeAtackSamples * status_.envelopeAtackLevel;
+					adsr = fNowSample / envelope.envelopeAtackSamples * envelope.envelopeAtackLevel;
 				}
 			}
-			else if (fNowSample < status_.envelopeAtackSamples + status_.envelopeDecaySamples)
+			else if (fNowSample < envelope.envelopeAtackSamples + envelope.envelopeDecaySamples)
 			{
 				//D
 				if (status_.isSlurFrom == 0)
 				{
-					auto ratio = (fNowSample - status_.envelopeAtackSamples) / status_.envelopeDecaySamples;
-					adsr = Lerp(status_.envelopeAtackLevel, status_.envelopeSustainLevel, ratio);
+					auto ratio = (fNowSample - envelope.envelopeAtackSamples) / envelope.envelopeDecaySamples;
+					adsr = Lerp(envelope.envelopeAtackLevel, envelope.envelopeSustainLevel, ratio);
 				}
 			}
-			else if (restSample < status_.envelopeReleaseSamples)
+			else if (restSample < envelope.envelopeReleaseSamples)
 			{
 				//R
 				if (status_.slurTo == 0)
 				{
-					adsr = restSample / status_.envelopeReleaseSamples * status_.envelopeSustainLevel;
+					adsr = restSample / envelope.envelopeReleaseSamples * envelope.envelopeSustainLevel;
 				}
 			}
 
 			sample = (std::max)(SHORT_MIN, (std::min)(SHORT_MAX, (int)(level * adsr * status_.volume * SHORT_MAX)));
+		}
+		if (tone->levelNoise != 0)
+		{
+			auto modify = CalcType(1.0) - (CalcType(rand()) / RAND_MAX * tone->levelNoise / 100);
+			sample = (std::max)(SHORT_MIN, (std::min)(SHORT_MAX, (int)(modify * (int)sample)));
 		}
 		if constexpr (Channels == 1)
 		{
@@ -875,7 +1086,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 		}
 		else if constexpr (Channels==2)
 		{
-			
+			//sample = (CalcType(0.7f) + (CalcType(rand()) / RAND_MAX) * 3/ 10) * sample;
 			//L
 			result.push_back(sample * (256 - status_.pan) / 256);
 			//R
@@ -902,7 +1113,7 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 	dest.pcmStartOffset = 0;
 	std::vector<int16_t> result;
 	//基本値
-	ToneData defaultTone[10] = {};
+	ToneData defaultTone[WavGenerator<CalcT>::ToneMax] = {};
 	defaultTone[0].curve = EWaveCurveType::Rectangle;
 	defaultTone[0].dutyRatio.push_back(50);
 
@@ -935,6 +1146,10 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 	defaultTone[9].dutyRatio.push_back(50);
 	defaultTone[9].randomRange = 50;
 
+	for (int i = 10; i < WavGenerator<CalcT>::ToneMax; i++)
+		defaultTone[i] = defaultTone[0];
+
+
 	//デフォルトセッティング
 	//120bpm
 	//四分音符
@@ -944,7 +1159,7 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 	//スラークロスポイント1/4
 	//エンベロープ Atack:15ms Decay:15ms Release:30ms AtackLevel:255 SustainLevel:200
 	//パン　128=センター
-	const char* defaultSetting = "T120O4L4V128@0@S4@E15:15:30:255:200P128";
+	const char* defaultSetting = "T120O4L4V128@0@S4@ED0:15:15:30:255:200P128";
 
 	//処理に時間がかかるならここはマルチスレッド化すると良い
 	for (int i = 0; i < Banks; i++)
@@ -957,7 +1172,7 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 		auto sharedSize = mml.length();
 		mml += bankMml[i];
 
-		for (int i = 0; i < 10; i++)
+		for (int i = 0; i < WavGenerator<CalcT>::ToneMax; i++)
 			generator.setTone(i, defaultTone[i]);
 
 		generator.setVolumeMax(255);

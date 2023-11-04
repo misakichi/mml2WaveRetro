@@ -8,6 +8,12 @@
 #include <array>
 
 struct WaveOutParam;
+
+class CEditEx : public CEdit
+{
+public:
+	BOOL PreTranslateMessage(MSG* pMsg);
+};
 // CMml2WavDlg ダイアログ
 class CMml2WavDlg : public CDialogEx
 {
@@ -44,11 +50,11 @@ private:
 		std::vector<int16_t> data;
 	};
 
-	CEdit txtMml_;
+	CEditEx txtMml_;
 	CListBox lstDuty_;
 	CComboBox cboDuty_;
 	CComboBox cboCurve_;
-	CEdit txtNoise_;
+	CEditEx txtNoise_;
 	MmlUtility::ToneData toneData_;
 	CEdit txtDutySwictTiming_;
 
@@ -70,7 +76,10 @@ private:
 
 	void RefreshDutyList();
 	void SetEnvelopeTemplate(int no);
-	bool genWavData(WavData& dest);
+	bool genWavData(WavData& dest, bool checkMml=false);
+	void play(bool isCheckWave);
+
+	CString genWaveCommand();
 
 	CComboBox cboFloatType_;
 	CComboBox cboSampleRate_;
@@ -90,4 +99,13 @@ public:
 	afx_msg void OnBnClickedBtnEnvTemplateStrongAtack2();
 	afx_msg void OnBnClickedBtnEnvTemplateLongRelease3();
 	afx_msg void OnBnClickedBtnEnvTemplateLongRelease4();
+	afx_msg void OnBnClickedBtnClearTabs();
+	afx_msg void OnBnClickedBtnImportExternalMmlFromClipboard();
+private:
+	CButton chkInvalidateTempoCommand_;
+	CButton chkDivideImportVol_;
+public:
+	afx_msg void OnBnClickedBtnWaveTest();
+private:
+	CEdit txtLevelNoise_;
 };

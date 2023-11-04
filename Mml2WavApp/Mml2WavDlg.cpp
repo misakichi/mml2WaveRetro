@@ -14,6 +14,21 @@
 #define new DEBUG_NEW
 #endif
 
+BOOL CEditEx::PreTranslateMessage(MSG* pMsg)
+{
+	if (pMsg->message == WM_KEYDOWN && pMsg->wParam == 'A' && (GetKeyState(VK_CONTROL)&0x8000)!=0)
+	{
+		CString str;
+		GetWindowText(str);
+		SetSel(0, str.GetLength(), TRUE);
+		return TRUE;
+	}
+	else
+	{
+		return CEdit::PreTranslateMessage(pMsg);
+	}
+}
+
 
 // アプリケーションのバージョン情報に使われる CAboutDlg ダイアログ
 
@@ -75,6 +90,9 @@ void CMml2WavDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CHK_LOOP, chkLoop_);
 	DDX_Control(pDX, IDC_CHK_START_FROM_CURRENT, chkFromCurrent_);
 	DDX_Control(pDX, IDC_CHK_CURRENT_BANK, chkCurrentBank_);
+	DDX_Control(pDX, IDC_CHK_EXTERNAL_IMPORT_INVALIDATE_TEMPO_COMMAND, chkInvalidateTempoCommand_);
+	DDX_Control(pDX, IDC_CHK_DIVIDE_IMPORT_VOL_ENABLE_BANKS, chkDivideImportVol_);
+	DDX_Control(pDX, IDC_TXT_LEVEL_NOISE, txtLevelNoise_);
 }
 
 BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
@@ -100,6 +118,9 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BTN_ENV_TEMPLATE_STRONG_ATACK2, &CMml2WavDlg::OnBnClickedBtnEnvTemplateStrongAtack2)
 	ON_BN_CLICKED(IDC_BTN_ENV_TEMPLATE_LONG_RELEASE3, &CMml2WavDlg::OnBnClickedBtnEnvTemplateLongRelease3)
 	ON_BN_CLICKED(IDC_BTN_ENV_TEMPLATE_LONG_RELEASE4, &CMml2WavDlg::OnBnClickedBtnEnvTemplateLongRelease4)
+	ON_BN_CLICKED(IDC_BTN_CLEAR_TABS, &CMml2WavDlg::OnBnClickedBtnClearTabs)
+	ON_BN_CLICKED(IDC_BTN_IMPORT_EXTERNAL_MML_FROM_CLIPBOARD, &CMml2WavDlg::OnBnClickedBtnImportExternalMmlFromClipboard)
+	ON_BN_CLICKED(IDC_BTN_WAVE_TEST, &CMml2WavDlg::OnBnClickedBtnWaveTest)
 END_MESSAGE_MAP()
 
 
@@ -156,6 +177,13 @@ BOOL CMml2WavDlg::OnInitDialog()
 
 	cboToneNumber_.SetCurSel(0);
 	SetEnvelopeTemplate(0);
+	GetDlgItem(IDC_TXT_IMPORT_VOL_MAX)->SetWindowText("15");
+	GetDlgItem(IDC_TXT_WAVE_TEST)->SetWindowText("C");
+	GetDlgItem(IDC_TXT_ENVELOPE_NO)->SetWindowText("0");
+	GetDlgItem(IDC_TXT_LEVEL_NOISE)->SetWindowText("0");
+
+	chkInvalidateTempoCommand_.SetCheck(1);
+	chkDivideImportVol_.SetCheck(1);
 
 	return TRUE;  // フォーカスをコントロールに設定した場合を除き、TRUE を返します。
 }
@@ -222,7 +250,7 @@ void CMml2WavDlg::RefreshDutyList()
 }
 
 
-bool CMml2WavDlg::genWavData(WavData& dest)
+bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 {
 
 	int sampleRate = 44100;
@@ -234,14 +262,25 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 		case 1: sampleRate = 48000;	break;
 		case 2: sampleRate = 96000;	break;
 		case 3: sampleRate = 192000; break;
-		}												
+		}											
+
+		constexpr int TestTab = 1000;
 		auto currentTab = tabBank_.GetCurSel() - 1;
 		int curStart, curEnd;
 		txtMml_.GetSel(curStart, curEnd);
 		bool ret = false;
-		if (chkCurrentBank_.GetCheck() == 0)
+		if (chkCurrentBank_.GetCheck() == 0 && !checkMml)
 		{
 			ret = MmlUtility::generateMmlToPcm<2, decltype(dummyCalcTypeVariable), BANKS>(result, shared_, bank_, sampleRate, currentTab, curStart);
+		}
+		else if (checkMml)
+		{
+			CString mml;
+			GetDlgItem(IDC_TXT_WAVE_TEST)->GetWindowText(mml);
+			std::array<std::string, 1> dummyBanks;
+			dummyBanks[0] = genWaveCommand() + mml;
+			ret = MmlUtility::generateMmlToPcm<2, decltype(dummyCalcTypeVariable), 1>(result, shared_, dummyBanks, sampleRate, 0, curStart);
+
 		}
 		else
 		{
@@ -276,8 +315,11 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 			}
 			else if (result.errBank >=0)
 			{
-				errMsg += "バンク";
-				errMsg += ('A'+result.errBank);
+				if (!checkMml)
+				{
+					errMsg += "バンク";
+					errMsg += ('A' + result.errBank);
+				}
 				errMsg += "\nMMLコード ";
 				errMsg += std::to_string(result.errPos);
 				errMsg += " 文字目";
@@ -285,17 +327,19 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 
 			if (result.errBank != -2 && result.errPos>=1)
 			{
-				tabBank_.SetCurSel(result.errBank + 1);
+				if (!checkMml)
+				{
+					tabBank_.SetCurSel(result.errBank + 1);
 
-				std::string* pStr;
-				if (result.errBank == -1)
-					pStr = &shared_;
-				else
-					pStr = &bank_[result.errBank];
-				txtMml_.SetWindowText(pStr->c_str());
-
-				txtMml_.SetSel((int)result.errPos-1, (int)result.errPos);
-				txtMml_.SetFocus();
+					std::string* pStr;
+					if (result.errBank == -1)
+						pStr = &shared_;
+					else
+						pStr = &bank_[result.errBank];
+					txtMml_.SetWindowText(pStr->c_str());
+					txtMml_.SetSel((int)result.errPos-1, (int)result.errPos);
+					txtMml_.SetFocus();
+				}
 			}
 			using namespace MmlUtility;
 			std::unordered_map< ErrorReson, const char*> errDetail;
@@ -317,6 +361,15 @@ bool CMml2WavDlg::genWavData(WavData& dest)
 			errDetail[ErrorReson::PanOutOfRange] = "パン値が範囲外";
 			errDetail[ErrorReson::VolumeOutOfRange] = "ボリューム値が範囲外";
 			errDetail[ErrorReson::RequireNumberError] = "数値が入るところなのに数値じゃない";
+			errDetail[ErrorReson::IliegalCommandInTuplet] = "連符中は単純な音符系とオクターブ変更のみ可能";
+			errDetail[ErrorReson::TupletNoteOver] = "連符個数が多すぎる";
+			errDetail[ErrorReson::NoteNothingTupletCloseOnNoTuplet] = "連符内に音符がない";
+			errDetail[ErrorReson::IliegalTupletOpenInTuplet] = "連符内で連符を始めようとした";
+			errDetail[ErrorReson::IlieagalLoopCommandInTuplet] = "連符内でループコマンドが出現した";
+			errDetail[ErrorReson::IlieagalLoopEndNotLoop] = "ループ開始していないのにループ終了が来た";
+			errDetail[ErrorReson::LoopNestOver] = "ループネスト数が限界を超えた";
+			errDetail[ErrorReson::NotSupportInfinityLoop] = "無限ループはサポートしていません";
+
 			errMsg += "\n";
 			errMsg += errDetail[result.result];
 
@@ -416,12 +469,21 @@ void CALLBACK waveOutCallbackProc(
 
 }
 
+void CMml2WavDlg::OnBnClickedBtnWaveTest()
+{
+	play(true);
+}
+
 void CMml2WavDlg::OnBnClickedBtnPlay()
+{
+	play(false);
+}
+void CMml2WavDlg::play(bool isCheckWave)
 {
 	OnBnClickedBtn();
 
 	WavData data;
-	if (!genWavData(data))
+	if (!genWavData(data, isCheckWave))
 		return;
 
 	auto playParam = new WaveOutParam();
@@ -634,16 +696,23 @@ static std::string float2Str(float v)
 
 void CMml2WavDlg::OnBnClickedButton1()
 {
+	
+	txtMml_.ReplaceSel(genWaveCommand());
+}
+CString CMml2WavDlg::genWaveCommand()
+{
 	int toneNo = cboToneNumber_.GetCurSel();
 	if(toneData_.dutyRatio.empty())
 		MessageBox("Duty比が未設定");
 	if (toneData_.randomRange < 0 || toneData_.randomRange>100)
 	{
 		MessageBox("ノイズ範囲が範囲外（0～100%）");
-		return;
+		return "";
 	}
 
-
+	CString levelNoiseStr;
+	txtLevelNoise_.GetWindowText(levelNoiseStr);
+	auto levelNoise = atof(levelNoiseStr);
 	std::string waveCmd = "@W";
 	waveCmd += ('0' + toneNo);
 	waveCmd += ':';
@@ -653,6 +722,11 @@ void CMml2WavDlg::OnBnClickedButton1()
 	{
 		waveCmd += 'R';
 		waveCmd += float2Str(toneData_.randomRange);
+	}
+	if (levelNoise != 0)
+	{
+		waveCmd += 'N';
+		waveCmd += float2Str(levelNoise);
 	}
 	if (toneData_.cycle != 0)
 	{
@@ -665,8 +739,7 @@ void CMml2WavDlg::OnBnClickedButton1()
 		waveCmd += float2Str(duty);
 	}
 
-	txtMml_.ReplaceSel(waveCmd.c_str());
-
+	return CString(waveCmd.c_str());
 
 }
 
@@ -702,16 +775,19 @@ void CMml2WavDlg::OnBnClickedBtnEnvelopeCmd()
 	CString releaseTimeStr;
 	CString atackLevelStr;
 	CString sustainLevelStr;
+	CString envNoStr;
 	GetDlgItem(IDC_TXT_ATACK_TIME)->GetWindowText(atackTimeStr);
 	GetDlgItem(IDC_TXT_DECAY_TIME)->GetWindowText(decayTimeStr);
 	GetDlgItem(IDC_TXT_RELEASE_TIME)->GetWindowText(releaseTimeStr);
 	GetDlgItem(IDC_TXT_ATACK_LEVEL)->GetWindowText(atackLevelStr);
 	GetDlgItem(IDC_TXT_SUSTAIN_LEVEL)->GetWindowText(sustainLevelStr);
+	GetDlgItem(IDC_TXT_ENVELOPE_NO)->GetWindowText(envNoStr);
 	float atackTime = atof(atackTimeStr);
 	float decayTime = atof(decayTimeStr);
 	float releaseTime = atof(releaseTimeStr);
 	int atackLevel = atoi(atackLevelStr);
 	int sustainLevel = atoi(sustainLevelStr);
+	int envNo = atoi(envNoStr);
 
 
 	auto timeCheck = [this](const char* name, float value)->bool
@@ -730,7 +806,7 @@ void CMml2WavDlg::OnBnClickedBtnEnvelopeCmd()
 		if (value < 0 || value>255)
 		{
 			CString msg;
-			msg.Format("%sのレベルが不正です(0～255)", name);
+			msg.Format("%sが不正です(0～255)", name);
 			MessageBox(msg);
 			return false;
 		}
@@ -748,8 +824,11 @@ void CMml2WavDlg::OnBnClickedBtnEnvelopeCmd()
 		return;
 	if (!levelCheck("sustain level", sustainLevel))
 		return;
+	if (!levelCheck("番号", envNo))
+		return;
 
-	std::string envelopeCmd = "@E";
+	std::string envelopeCmd = "@ED";
+	envelopeCmd += std::to_string(envNo) + ":";
 	envelopeCmd += float2Str(atackTime) + ":";
 	envelopeCmd += float2Str(decayTime) + ":";
 	envelopeCmd += float2Str(releaseTime) + ":";
@@ -800,3 +879,140 @@ void CMml2WavDlg::OnBnClickedBtnEnvTemplateLongRelease4()
 {
 	SetEnvelopeTemplate(6);
 }
+
+
+void CMml2WavDlg::OnBnClickedBtnClearTabs()
+{
+	txtMml_.SetWindowText("");
+	shared_="";
+	for (auto& bank : bank_)
+		bank = "";
+
+}
+
+
+void CMml2WavDlg::OnBnClickedBtnImportExternalMmlFromClipboard()
+{
+	if (!IsClipboardFormatAvailable(CF_TEXT))
+	{
+		MessageBox("クリップボードにテキストがありません");
+		return;
+	}
+	if (!OpenClipboard())
+		return;
+
+	auto hClip = GetClipboardData(CF_TEXT);
+	if (hClip != NULL)
+	{
+		auto str = GlobalLock(hClip);
+		if (str != NULL)
+		{
+			CString importStr((char*)str);
+			importStr = importStr.MakeUpper();
+			auto startPos = importStr.Find("MML@");
+			if (startPos != -1)
+				importStr = importStr.Mid(startPos + 4);
+			auto endPos = importStr.Find(";");
+			if (endPos != -1)
+				importStr = importStr.Left(endPos);
+			
+			bool invalidateTempo = chkInvalidateTempoCommand_.GetCheck() != 0;
+
+			importStr.Replace(" ", "");
+			importStr.Replace("\r", "");
+			importStr.Replace("\n", "");
+			importStr.Replace("\t", "");
+			if (importStr[0] == 'T')
+			{
+				int cnt = 1;
+				while (importStr[cnt] >= '0' && importStr[cnt] <= '9')
+					cnt++;
+				shared_ = importStr.Left(cnt);
+				importStr = importStr.Mid(cnt);
+			}
+			else
+			{
+				shared_ = "";
+			}
+
+			CString maxVolStr;
+			GetDlgItem(IDC_TXT_IMPORT_VOL_MAX)->GetWindowText(maxVolStr);
+			int maxVol = atoi(maxVolStr);
+
+			int enableBanks = 0;
+			for (auto& bank : bank_)
+			{
+				auto splitPos = importStr.Find(',');
+				if (splitPos != -1)
+				{
+					bank = importStr.Left(splitPos);
+					importStr = importStr.Mid(splitPos + 1);
+				}
+				else
+				{
+					bank = importStr;
+					importStr = "";
+				}
+
+				if (invalidateTempo)
+				{
+					int tcmd = -1;
+					while ((tcmd = bank.find('T')) != std::string::npos)
+					{
+						int cnt = tcmd+1;
+						while (bank[cnt] >= '0' && bank[cnt] <= '9')
+							cnt++;
+						bank.erase(bank.begin() + tcmd, bank.begin() + cnt);
+					}
+				}
+				if(bank.length()>0)
+					enableBanks++;
+			}
+
+			int baseMaxVol = 255;
+			if (chkDivideImportVol_.GetCheck() && enableBanks>0)
+			{
+				baseMaxVol /= enableBanks;
+			}
+
+			auto volModify = [baseMaxVol, maxVol](std::string& mml)
+			{
+				int vcmd = 0;
+				while ((vcmd = mml.find('V', vcmd)) != std::string::npos)
+				{
+					int cnt = vcmd + 1;
+					char buf[64] = {};
+					char* p = buf;
+					while (mml[cnt] >= '0' && mml[cnt] <= '9')
+					{
+						*p++ = mml[cnt];
+						cnt++;
+					}
+					auto newVol = (std::min)(255, atoi(buf) * baseMaxVol / maxVol);
+					auto newVolStr = std::to_string(newVol);
+					mml.erase(mml.begin() + vcmd+1, mml.begin() + cnt);
+					mml.insert(mml.begin() + vcmd + 1, newVolStr.begin(), newVolStr.end());
+
+					++vcmd;
+				}
+			};
+
+			for (auto& bank : bank_)
+				volModify(bank);
+			volModify(shared_);
+
+			GlobalUnlock(hClip);
+
+			auto index = tabBank_.GetCurSel();
+			std::string* pStr;
+			if (index == 0)
+				pStr = &shared_;
+			else
+				pStr = &bank_[index - 1];
+			txtMml_.SetWindowText(pStr->c_str());
+		}
+	}
+	CloseClipboard();
+}
+
+
