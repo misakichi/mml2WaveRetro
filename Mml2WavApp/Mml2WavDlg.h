@@ -57,6 +57,17 @@ private:
 	CEditEx txtNoise_;
 	MmlUtility::ToneData toneData_;
 	CEdit txtDutySwictTiming_;
+	CComboBox cboFloatType_;
+	CComboBox cboSampleRate_;
+	CTabCtrl tabBank_;
+	CComboBox cboToneNumber_;
+	CButton chkLoop_;
+	CButton chkFromCurrent_;
+	CButton chkCurrentBank_;
+	CButton chkInvalidateTempoCommand_;
+	CButton chkDivideImportVol_;
+	CEdit txtLevelNoise_;
+
 
 	afx_msg void OnBnClickedBtnPlay();
 	afx_msg void OnBnClickedBtnDutyRatioAdd();
@@ -74,20 +85,30 @@ private:
 	afx_msg void OnBnClickedBtnEnvTemplateStrongAtack();
 	afx_msg void OnBnClickedBtnEnvTemplateLongRelease();
 
+	afx_msg void OnBnClickedBtnEnvTemplateStrongAtack2();
+	afx_msg void OnBnClickedBtnEnvTemplateLongRelease3();
+	afx_msg void OnBnClickedBtnEnvTemplateLongRelease4();
+	afx_msg void OnBnClickedBtnClearTabs();
+	afx_msg void OnBnClickedBtnImportExternalMmlFromClipboard();
+	afx_msg void OnBnClickedBtnWaveTest();
+
+	afx_msg void OnCmdExit();
+	afx_msg void OnCmdNewFile();
+	afx_msg void OnCmdOpenFile();
+	afx_msg void OnCmdSaveAsFile();
+	afx_msg void OnCmdSaveFile();
+	virtual BOOL PreTranslateMessage(MSG* pMsg);
+
 	void RefreshDutyList();
 	void SetEnvelopeTemplate(int no);
 	bool genWavData(WavData& dest, bool checkMml=false);
 	void play(bool isCheckWave);
+	bool closeFile();
+
+	void loadMml(CString str, bool isVolumeControl);
+	void setWindowText();
 
 	CString genWaveCommand();
-
-	CComboBox cboFloatType_;
-	CComboBox cboSampleRate_;
-	CTabCtrl tabBank_;
-	CComboBox cboToneNumber_;
-	CButton chkLoop_;
-	CButton chkFromCurrent_;
-	CButton chkCurrentBank_;
 
 	std::vector<WaveOutParam*> playing_;
 
@@ -95,17 +116,8 @@ private:
 	std::string shared_;
 	std::array<std::string, BANKS> bank_;
 
-public:
-	afx_msg void OnBnClickedBtnEnvTemplateStrongAtack2();
-	afx_msg void OnBnClickedBtnEnvTemplateLongRelease3();
-	afx_msg void OnBnClickedBtnEnvTemplateLongRelease4();
-	afx_msg void OnBnClickedBtnClearTabs();
-	afx_msg void OnBnClickedBtnImportExternalMmlFromClipboard();
-private:
-	CButton chkInvalidateTempoCommand_;
-	CButton chkDivideImportVol_;
-public:
-	afx_msg void OnBnClickedBtnWaveTest();
-private:
-	CEdit txtLevelNoise_;
+	CString filePath_;
+	bool isDirty_ = false;
+	HACCEL hAcc_;
+
 };

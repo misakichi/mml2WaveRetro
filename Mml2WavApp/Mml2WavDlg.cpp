@@ -8,6 +8,7 @@
 #include "Mml2WavDlg.h"
 #include "afxdialogex.h"
 #include <memory>
+#include <io.h>
 #pragma comment(lib,"Winmm.lib")
 
 #ifdef _DEBUG
@@ -121,6 +122,15 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BTN_CLEAR_TABS, &CMml2WavDlg::OnBnClickedBtnClearTabs)
 	ON_BN_CLICKED(IDC_BTN_IMPORT_EXTERNAL_MML_FROM_CLIPBOARD, &CMml2WavDlg::OnBnClickedBtnImportExternalMmlFromClipboard)
 	ON_BN_CLICKED(IDC_BTN_WAVE_TEST, &CMml2WavDlg::OnBnClickedBtnWaveTest)
+	ON_COMMAND(ID_MNU_EXIT, &CMml2WavDlg::OnCmdExit)
+	ON_COMMAND(ID_MNU_NEW_FILE, &CMml2WavDlg::OnCmdNewFile)
+	ON_COMMAND(ID_MNU_OPEN_FILE, &CMml2WavDlg::OnCmdOpenFile)
+	ON_COMMAND(ID_MNU_SAVE_AS_FILE, &CMml2WavDlg::OnCmdSaveAsFile)
+	ON_COMMAND(ID_MNU_SAVE_FILE, &CMml2WavDlg::OnCmdSaveFile)
+	ON_COMMAND(ID_ACC_EXIT, &CMml2WavDlg::OnCmdExit)
+	ON_COMMAND(ID_ACC_NEW_FILE, &CMml2WavDlg::OnCmdNewFile)
+	ON_COMMAND(ID_ACC_OPEN_FILE, &CMml2WavDlg::OnCmdOpenFile)
+	ON_COMMAND(ID_ACC_SAVE_FILE, &CMml2WavDlg::OnCmdSaveFile)
 END_MESSAGE_MAP()
 
 
@@ -184,6 +194,9 @@ BOOL CMml2WavDlg::OnInitDialog()
 
 	chkInvalidateTempoCommand_.SetCheck(1);
 	chkDivideImportVol_.SetCheck(1);
+	setWindowText();
+
+	hAcc_ = LoadAccelerators(NULL, MAKEINTRESOURCE(IDR_ACCELERATOR1));
 
 	return TRUE;  // フォーカスをコントロールに設定した場合を除き、TRUE を返します。
 }
@@ -654,6 +667,13 @@ void CMml2WavDlg::OnBnClickedBtnOutput()
 
 }
 
+void CMml2WavDlg::setWindowText()
+{
+	CString title;
+	title.Format("mml2wav Retro - %s %s", filePath_ == "" ? "無題" : filePath_, isDirty_ ? "*" : "");
+	SetWindowText(title);
+
+}
 
 void CMml2WavDlg::OnTcnSelchangeTabBank(NMHDR* pNMHDR, LRESULT* pResult)
 {
@@ -677,6 +697,10 @@ void CMml2WavDlg::OnEnChangeTxtMml()
 		shared_= str;
 	else
 		bank_[index-1] = str;
+	
+	isDirty_ = true;
+
+	setWindowText();
 }
 
 static std::string float2Str(float v)
@@ -698,7 +722,10 @@ void CMml2WavDlg::OnBnClickedButton1()
 {
 	
 	txtMml_.ReplaceSel(genWaveCommand());
+	isDirty_ = true;
+	setWindowText();
 }
+
 CString CMml2WavDlg::genWaveCommand()
 {
 	int toneNo = cboToneNumber_.GetCurSel();
@@ -836,6 +863,9 @@ void CMml2WavDlg::OnBnClickedBtnEnvelopeCmd()
 	envelopeCmd += std::to_string(sustainLevel);
 	txtMml_.ReplaceSel(envelopeCmd.c_str());
 
+	isDirty_ = true;
+	setWindowText();
+
 }
 
 
@@ -883,11 +913,7 @@ void CMml2WavDlg::OnBnClickedBtnEnvTemplateLongRelease4()
 
 void CMml2WavDlg::OnBnClickedBtnClearTabs()
 {
-	txtMml_.SetWindowText("");
-	shared_="";
-	for (auto& bank : bank_)
-		bank = "";
-
+	OnCmdNewFile();
 }
 
 
@@ -908,111 +934,265 @@ void CMml2WavDlg::OnBnClickedBtnImportExternalMmlFromClipboard()
 		if (str != NULL)
 		{
 			CString importStr((char*)str);
-			importStr = importStr.MakeUpper();
-			auto startPos = importStr.Find("MML@");
-			if (startPos != -1)
-				importStr = importStr.Mid(startPos + 4);
-			auto endPos = importStr.Find(";");
-			if (endPos != -1)
-				importStr = importStr.Left(endPos);
-			
-			bool invalidateTempo = chkInvalidateTempoCommand_.GetCheck() != 0;
-
-			importStr.Replace(" ", "");
-			importStr.Replace("\r", "");
-			importStr.Replace("\n", "");
-			importStr.Replace("\t", "");
-			if (importStr[0] == 'T')
-			{
-				int cnt = 1;
-				while (importStr[cnt] >= '0' && importStr[cnt] <= '9')
-					cnt++;
-				shared_ = importStr.Left(cnt);
-				importStr = importStr.Mid(cnt);
-			}
-			else
-			{
-				shared_ = "";
-			}
-
-			CString maxVolStr;
-			GetDlgItem(IDC_TXT_IMPORT_VOL_MAX)->GetWindowText(maxVolStr);
-			int maxVol = atoi(maxVolStr);
-
-			int enableBanks = 0;
-			for (auto& bank : bank_)
-			{
-				auto splitPos = importStr.Find(',');
-				if (splitPos != -1)
-				{
-					bank = importStr.Left(splitPos);
-					importStr = importStr.Mid(splitPos + 1);
-				}
-				else
-				{
-					bank = importStr;
-					importStr = "";
-				}
-
-				if (invalidateTempo)
-				{
-					int tcmd = -1;
-					while ((tcmd = bank.find('T')) != std::string::npos)
-					{
-						int cnt = tcmd+1;
-						while (bank[cnt] >= '0' && bank[cnt] <= '9')
-							cnt++;
-						bank.erase(bank.begin() + tcmd, bank.begin() + cnt);
-					}
-				}
-				if(bank.length()>0)
-					enableBanks++;
-			}
-
-			int baseMaxVol = 255;
-			if (chkDivideImportVol_.GetCheck() && enableBanks>0)
-			{
-				baseMaxVol /= enableBanks;
-			}
-
-			auto volModify = [baseMaxVol, maxVol](std::string& mml)
-			{
-				int vcmd = 0;
-				while ((vcmd = mml.find('V', vcmd)) != std::string::npos)
-				{
-					int cnt = vcmd + 1;
-					char buf[64] = {};
-					char* p = buf;
-					while (mml[cnt] >= '0' && mml[cnt] <= '9')
-					{
-						*p++ = mml[cnt];
-						cnt++;
-					}
-					auto newVol = (std::min)(255, atoi(buf) * baseMaxVol / maxVol);
-					auto newVolStr = std::to_string(newVol);
-					mml.erase(mml.begin() + vcmd+1, mml.begin() + cnt);
-					mml.insert(mml.begin() + vcmd + 1, newVolStr.begin(), newVolStr.end());
-
-					++vcmd;
-				}
-			};
-
-			for (auto& bank : bank_)
-				volModify(bank);
-			volModify(shared_);
+			loadMml(importStr, true);
 
 			GlobalUnlock(hClip);
 
-			auto index = tabBank_.GetCurSel();
-			std::string* pStr;
-			if (index == 0)
-				pStr = &shared_;
-			else
-				pStr = &bank_[index - 1];
-			txtMml_.SetWindowText(pStr->c_str());
 		}
 	}
 	CloseClipboard();
 }
 
+void CMml2WavDlg::loadMml(CString importStr, bool isVolumeControl)
+{
+	importStr = importStr.MakeUpper();
 
+	auto startSharedPos = importStr.Find("SMML@");
+	bool isSharedOk = 0;
+	if (startSharedPos != -1)
+	{
+		startSharedPos += 5;
+		auto endSharedPos = importStr.Find(";", startSharedPos);
+		if (endSharedPos != -1)
+		{
+			auto sharedStr = importStr.Mid(startSharedPos, endSharedPos - startSharedPos);
+			shared_ = sharedStr;
+			importStr = importStr.Left(startSharedPos - 5) + importStr.Mid(endSharedPos + 1);
+			isSharedOk = true;
+		}
+	}
+
+	auto startPos = importStr.Find("MML@");
+	if (startPos != -1)
+		importStr = importStr.Mid(startPos + 4);
+	auto endPos = importStr.Find(";");
+	if (endPos != -1)
+		importStr = importStr.Left(endPos);
+
+	bool invalidateTempo = chkInvalidateTempoCommand_.GetCheck() != 0;
+
+	importStr.Replace("\t", "");
+
+	if (!isSharedOk)
+	{
+		if (importStr[0] == 'T')
+		{
+			int cnt = 1;
+			while (importStr[cnt] >= '0' && importStr[cnt] <= '9')
+				cnt++;
+			shared_ = importStr.Left(cnt);
+			importStr = importStr.Mid(cnt);
+		}
+		else
+		{
+			shared_ = "";
+		}
+	}
+
+	CString maxVolStr;
+	GetDlgItem(IDC_TXT_IMPORT_VOL_MAX)->GetWindowText(maxVolStr);
+	int maxVol = atoi(maxVolStr);
+
+	int enableBanks = 0;
+	for (auto& bank : bank_)
+	{
+		auto splitPos = importStr.Find(',');
+		if (splitPos != -1)
+		{
+			bank = importStr.Left(splitPos);
+			importStr = importStr.Mid(splitPos + 1);
+		}
+		else
+		{
+			bank = importStr;
+			importStr = "";
+		}
+
+		if (invalidateTempo)
+		{
+			int tcmd = -1;
+			while ((tcmd = bank.find('T')) != std::string::npos)
+			{
+				int cnt = tcmd + 1;
+				while (bank[cnt] >= '0' && bank[cnt] <= '9')
+					cnt++;
+				bank.erase(bank.begin() + tcmd, bank.begin() + cnt);
+			}
+		}
+		if (bank.length() > 0)
+			enableBanks++;
+	}
+
+	//事後音量調整
+	if (isVolumeControl)
+	{
+		int baseMaxVol = 255;
+		if (chkDivideImportVol_.GetCheck() && enableBanks > 0)
+		{
+			baseMaxVol /= enableBanks;
+		}
+
+		auto volModify = [baseMaxVol, maxVol](std::string& mml)
+		{
+			int vcmd = 0;
+			while ((vcmd = mml.find('V', vcmd)) != std::string::npos)
+			{
+				int cnt = vcmd + 1;
+				char buf[64] = {};
+				char* p = buf;
+				while (mml[cnt] >= '0' && mml[cnt] <= '9')
+				{
+					*p++ = mml[cnt];
+					cnt++;
+				}
+				auto newVol = (std::min)(255, atoi(buf) * baseMaxVol / maxVol);
+				auto newVolStr = std::to_string(newVol);
+				mml.erase(mml.begin() + vcmd + 1, mml.begin() + cnt);
+				mml.insert(mml.begin() + vcmd + 1, newVolStr.begin(), newVolStr.end());
+
+				++vcmd;
+			}
+		};
+
+		for (auto& bank : bank_)
+			volModify(bank);
+		volModify(shared_);
+	}
+
+	isDirty_ = false;
+	auto index = tabBank_.GetCurSel();
+	std::string* pStr;
+	if (index == 0)
+		pStr = &shared_;
+	else
+		pStr = &bank_[index - 1];
+	txtMml_.SetWindowText(pStr->c_str());
+	setWindowText();
+
+}
+
+bool CMml2WavDlg::closeFile()
+{
+	if (isDirty_)
+	{
+		auto ret = MessageBox("ファイルが変更されています、保存しますか？", "mml2wav retro", MB_YESNOCANCEL | MB_ICONQUESTION);
+		if (ret == IDCANCEL)
+		{
+			return false;
+		}
+		else if (ret == IDYES)
+		{
+			OnCmdSaveFile();
+		}
+		else if (ret == IDNO)
+		{
+		}
+	}
+	txtMml_.SetWindowText("");
+	shared_ = "";
+	for (auto& bank : bank_)
+		bank = "";
+	isDirty_ = false;
+	filePath_ = "";
+	setWindowText();
+
+	return true;
+}
+
+void CMml2WavDlg::OnCmdExit()
+{
+	CDialogEx::OnOK();
+}
+
+void CMml2WavDlg::OnCmdNewFile()
+{
+	if (!closeFile())
+		return;
+
+}
+
+
+void CMml2WavDlg::OnCmdOpenFile()
+{
+	if (!closeFile())
+		return;
+
+	CString filePath = "";
+	CFileDialog dlg(TRUE, "mml", "title.mml", 6, "mmlファイル(*.mml)|*.mml|テキストファイル(*.txt)|*.txt||", this);
+	if (dlg.DoModal() == IDOK)
+	{
+		filePath = dlg.GetPathName();
+	}
+	else
+	{
+		return;
+	}
+	FILE* fp;
+	if (fopen_s(&fp, filePath, "r") != 0 || fp==NULL)
+	{
+		MessageBox("失敗しました");
+		return;
+	}
+	CString str;
+	auto len = _filelength(_fileno(fp));
+	char* buffer = new char[len + 1];
+	buffer[len] = 0;
+	fread(buffer, 1, len, fp);
+	str += buffer;
+	fclose(fp);
+	filePath_ = filePath;
+
+	loadMml(str, false);
+
+}
+
+
+void CMml2WavDlg::OnCmdSaveAsFile()
+{
+	filePath_ = "";
+	OnCmdOpenFile();
+}
+
+
+void CMml2WavDlg::OnCmdSaveFile()
+{
+	auto fileChoice = [this]()
+	{
+		filePath_ = "";
+		CFileDialog dlg(FALSE, "mml", "title.mml", 6, "mmlファイル(*.mml)|*.mml|テキストファイル(*.txt)|*.txt||", this);
+		if (dlg.DoModal() == IDOK)
+		{
+			filePath_ = dlg.GetPathName();
+		}
+	};
+
+	FILE* fp;
+	while(fopen_s(&fp, filePath_, "w") != 0)
+	{
+		fileChoice();
+		if (filePath_ == "")
+			return;
+	}
+	//shared領域
+	fputs("SMML@",fp);
+	fputs(shared_.c_str(), fp);
+	fputs(";", fp);
+	fputs("MML@", fp);
+	for (int i = 0; i < BANKS; i++)
+	{
+		fputs(bank_[i].c_str(), fp);
+		fputs(i == BANKS - 1 ? ";" : ",", fp);
+	}
+	fclose(fp);
+	isDirty_ = false;
+	setWindowText();
+}
+
+
+
+BOOL CMml2WavDlg::PreTranslateMessage(MSG* pMsg)
+{
+	if (TranslateAccelerator(this->GetSafeHwnd(), hAcc_, pMsg))
+		return TRUE;
+	return CDialogEx::PreTranslateMessage(pMsg);
+}

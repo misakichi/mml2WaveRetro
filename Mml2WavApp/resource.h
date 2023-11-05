@@ -8,6 +8,8 @@
 #define IDD_MFCAPPLICATION1_DIALOG      102
 #define IDD_DLG_MAINFORM                102
 #define IDR_MAINFRAME                   128
+#define IDR_MNU_MAIN_DIALOG             131
+#define IDR_ACCELERATOR1                132
 #define IDC_TXT_MML                     1000
 #define IDC_LST_DUTY_RATIO              1001
 #define IDC_CBO_DUTY_RATIO              1002
@@ -51,15 +53,28 @@
 #define IDC_TXT_LEVEL_NOISE             1037
 #define IDC_TXT_WAVE_TEST               1038
 #define IDC_BTN_WAVE_TEST               1039
-#define IDC_TXT_ATACK_TIME2             1041
 #define IDC_TXT_ENVELOPE_NO             1041
+#define ID_ACC_OPEN_FILE                32771
+#define ID_FILE_NEW32772                32772
+#define ID_FILE_OPEN32773               32773
+#define ID_FILE_SAVE32774               32774
+#define ID_FILE_SAVEAS                  32775
+#define ID_FILE_EXIT                    32776
+#define ID_MNU_NEW_FILE                 32777
+#define ID_MNU_OPEN_FILE                32778
+#define ID_MNU_SAVE_FILE                32779
+#define ID_MNU_SAVE_AS_FILE             32780
+#define ID_MNU_EXIT                     32781
+#define ID_ACC_NEW_FILE                 32782
+#define ID_ACC_SAVE_FILE                32783
+#define ID_ACC_EXIT                     32784
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32771
+#define _APS_NEXT_RESOURCE_VALUE        133
+#define _APS_NEXT_COMMAND_VALUE         32787
 #define _APS_NEXT_CONTROL_VALUE         1040
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
