@@ -382,6 +382,7 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			errDetail[ErrorReson::IlieagalLoopEndNotLoop] = "ループ開始していないのにループ終了が来た";
 			errDetail[ErrorReson::LoopNestOver] = "ループネスト数が限界を超えた";
 			errDetail[ErrorReson::NotSupportInfinityLoop] = "無限ループはサポートしていません";
+			errDetail[ErrorReson::IliegalLfoType] = "存在しないLFOタイプ";
 
 			errMsg += "\n";
 			errMsg += errDetail[result.result];

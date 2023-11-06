@@ -32,11 +32,12 @@ namespace MmlUtility
 		IliegalTupletCloseOnNoTuplet,
 		NoteNothingTupletCloseOnNoTuplet,
 		IliegalTupletOpenInTuplet,
-
 		IlieagalLoopCommandInTuplet,		
 		IlieagalLoopEndNotLoop,
 		LoopNestOver,
 		NotSupportInfinityLoop,
+		
+		IliegalLfoType,
 	};
 
 
@@ -63,7 +64,7 @@ namespace MmlUtility
 	public:
 		using CalcType = CalcT;
 
-		MmlCommand() { isCurrent = 0; }
+		MmlCommand() { memset(buffer, 0,sizeof(buffer)); isCurrent = 0; }
 		MmlCommand(const MmlCommand& src)
 		{
 			command = src.command;
@@ -88,7 +89,8 @@ namespace MmlUtility
 			EnvelopeDefine,	//@ED
 			EnvelopeCall,	//@EC
 			WaveDefine,		//@W
-			Loop,
+			Loop,			//[]
+			LFO,			//@L
 		};
 
 		struct NoteParam {
@@ -120,7 +122,12 @@ namespace MmlUtility
 			float cycle;
 			float duty[MaxDuties];
 		};
-
+		struct LFO
+		{
+			int type;	//0:音量 1:音程
+			CalcType cycleMsec;
+			CalcType percent;
+		};
 		union {
 			NoteParam note;
 			EnvelopeParam envelope;
@@ -128,6 +135,7 @@ namespace MmlUtility
 			uint8_t waveCurve;
 			CalcType slurCrossPoint;
 			LoopCommand loop;
+			LFO lfo;
 			int bpm;
 			int vol;
 			int pan; //127=center
@@ -207,6 +215,10 @@ namespace MmlUtility
 			CalcType envelopeSustainLevel;
 
 		};
+		struct LfoState {
+			CalcType freqSample;
+			CalcType percent;	//0だと動作しない
+		};
 		struct PlayStatus {
 			std::vector<RecentLength> recentLength;
 			int commandIdx;
@@ -221,8 +233,9 @@ namespace MmlUtility
 			CalcType slurCrossPoint; //スラーの移行点
 
 
-			int noteSamples;	//現在処理中のコマンドのサンプル数
-			int noteProcedSamples; //処理済み
+			int noteSamples;		//現在処理中のコマンドのサンプル数
+			int noteProcedSamples;	//処理済み
+			int toneSamples;		//発音のたびにリセットされるサンプルカウンター
 
 			bool toneOff;
 			CalcType baseFreqSamples;
@@ -233,8 +246,11 @@ namespace MmlUtility
 			int isSlurFrom;
 			CalcType slurTo;	//次のノートとスラーの時の、次のノートのbaseFreqSamples
 			
-			Envelope currentEnvelope;
 			Envelope envelopes[EnvelopeMax];
+			Envelope* currentEnvelope = &envelopes[0];
+
+			LfoState lfoTone;
+			LfoState lfoVolume;
 
 			int loopNum[LoopNestMax];
 		};
