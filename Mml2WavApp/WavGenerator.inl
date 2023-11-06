@@ -805,6 +805,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				tone.levelNoise = cmd.wave.levelNoise;
 				tone.dutyRatio.clear();
 				tone.dutyRatio.insert(tone.dutyRatio.end(), cmd.wave.duty, cmd.wave.duty + cmd.wave.duties);
+				break;
 			}
 			case TypedCommand::ECommand::Loop:
 				{

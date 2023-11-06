@@ -741,9 +741,9 @@ CString CMml2WavDlg::genWaveCommand()
 	txtLevelNoise_.GetWindowText(levelNoiseStr);
 	auto levelNoise = atof(levelNoiseStr);
 	std::string waveCmd = "@W";
-	waveCmd += ('0' + toneNo);
+	waveCmd += std::to_string(toneNo);
 	waveCmd += ':';
-	waveCmd += ('0' + (int)toneData_.curve);
+	waveCmd += std::to_string((int)toneData_.curve);
 
 	if (toneData_.randomRange != 0)
 	{
@@ -765,6 +765,9 @@ CString CMml2WavDlg::genWaveCommand()
 		waveCmd += ':';
 		waveCmd += float2Str(duty);
 	}
+
+	waveCmd += "@";
+	waveCmd += std::to_string(toneNo);
 
 	return CString(waveCmd.c_str());
 
