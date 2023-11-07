@@ -53,6 +53,8 @@
 #define IDC_TXT_LEVEL_NOISE             1037
 #define IDC_TXT_WAVE_TEST               1038
 #define IDC_BTN_WAVE_TEST               1039
+#define IDC_CHK_LOOP2                   1040
+#define IDC_CHK_EMULATE_8BIT            1040
 #define IDC_TXT_ENVELOPE_NO             1041
 #define ID_ACC_OPEN_FILE                32771
 #define ID_FILE_NEW32772                32772
@@ -68,13 +70,15 @@
 #define ID_ACC_NEW_FILE                 32782
 #define ID_ACC_SAVE_FILE                32783
 #define ID_ACC_EXIT                     32784
+#define ID_ACC_PLAY                     32787
+#define ID_ACC_STOP                     32788
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        133
-#define _APS_NEXT_COMMAND_VALUE         32787
+#define _APS_NEXT_COMMAND_VALUE         32790
 #define _APS_NEXT_CONTROL_VALUE         1040
 #define _APS_NEXT_SYMED_VALUE           101
 #endif

@@ -169,9 +169,12 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 
 	TypedCommand cmdDefaultLfo;
 	cmdDefaultLfo.command = TypedCommand::ECommand::LFO;
-	cmdDefaultLfo.lfo.cycleMsec = 20;
-	cmdDefaultLfo.lfo.percent = 0;
+	cmdDefaultLfo.lfo.setting[0].start = 0;
+	cmdDefaultLfo.lfo.setting[0].lerp = 0;
+	cmdDefaultLfo.lfo.setting[0].cycleMsec = 20;
+	cmdDefaultLfo.lfo.setting[0].percent = 0;
 	cmdDefaultLfo.lfo.type = 0;
+	cmdDefaultLfo.lfo.settings = 1;
 	commands.push_back(cmdDefaultLfo);
 	cmdDefaultLfo.lfo.type = 1;
 	commands.push_back(cmdDefaultLfo);
@@ -565,9 +568,8 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				TypedCommand cmdLfo = {};
 				cmdLfo.command = TypedCommand::ECommand::LFO;
 
-				NUM_CHECK(*p);
-				cmdLfo.lfo.cycleMsec = getNumF();
 				auto typeCh = *p++;
+				auto timeType = *p;
 				switch(typeCh)
 				{
 				case  'V':
@@ -579,8 +581,52 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				default:
 					return genError(ErrorReson::IliegalLfoType);
 				}
-				NUM_CHECK(*p);
-				cmdLfo.lfo.percent = getNumF() / 100.0;
+				if (timeType == 'P')
+				{
+					++p;
+					cmdLfo.lfo.type += 2;
+				}
+
+				float preStart = -1;
+				int settings = 0;
+				while (settings < LfoSettingParams)
+				{
+					NUM_CHECK(*p);
+					cmdLfo.lfo.setting[settings].start = getNumF();
+					cmdLfo.lfo.setting[settings].lerp = 1;
+					if (*p == 'S')
+					{
+						cmdLfo.lfo.setting[settings].lerp = 0;
+						++p;
+					}
+					else if (*p == 'L')
+					{
+						cmdLfo.lfo.setting[settings].lerp = 1;
+						++p;
+					}
+
+					if (*p++ != ':')
+						return genError(ErrorReson::IllegalFormatLfoCommand);
+					if(preStart >= cmdLfo.lfo.setting[settings].start)
+						return genError(ErrorReson::LfoStartGreatorBeforeStart);
+					
+					preStart = cmdLfo.lfo.setting[settings].start;
+
+					NUM_CHECK(*p);
+					cmdLfo.lfo.setting[settings].cycleMsec = getNumF();
+					if (*p++ != ':')
+						return genError(ErrorReson::IllegalFormatLfoCommand);
+					NUM_CHECK(*p);
+					cmdLfo.lfo.setting[settings].percent = getNumF() / 100.0;
+					++settings;
+					if (*p != ':')
+					{
+						break;
+					}
+					++p;
+				}
+				cmdLfo.lfo.settings = settings;
+
 				commands.push_back(cmdLfo);
 
 
@@ -709,6 +755,22 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 	{
 		return genError(ErrorReson::SlurNotClose);
 	}
+
+	//長さを計算
+	for (auto& cmd : commands)
+	{
+		if (cmd.command == TypedCommand::ECommand::ToneNote)
+		{
+			cmd.note.noteTotalLength = cmd.note.length;
+			auto pCmd = &cmd;
+			while (pCmd->note.SlurToCmdIdx != -1)
+			{
+				pCmd = &commands[pCmd->note.SlurToCmdIdx];
+				cmd.note.noteTotalLength += pCmd->note.length;
+			}
+		}
+	}
+
 	dest.swap(commands);
 	return true;
 }
@@ -766,6 +828,79 @@ static double mod<double>(const double& x, const double& y)
 {
 	return fmodf(x, y);
 }
+template<typename T>
+static T Lerp(T a, T b, T ratio)
+{
+	return a * (T(1) - ratio) + b * ratio;
+};
+
+
+template<typename CalcT>
+void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::WavGenerator<CalcT>::PlayStatus* playStatus, int sampleRate)
+{
+	if (lfoParams->settings==0)
+	{
+		freqSample = 0;
+		percent = 0;
+	}
+
+	CalcType curPoint;	   //各start値単位に合わせる
+	if (lfoParams->type < 2)
+	{
+		//msec指定
+		curPoint = CalcType(playStatus->toneCurSample) * 1000 / sampleRate;
+	}
+	else
+	{
+		//%指定
+		curPoint = CalcType(playStatus->toneCurSample) / CalcType(playStatus->toneSamples) * 100;
+	}
+
+	//次の設定に行けるかチェック
+	if (settingIndex < lfoParams->settings-1)
+	{
+		const MmlCommand<CalcType>::LFO::Setting* nextSetting = &lfoParams->setting[settingIndex + 1];
+		if (CalcType(nextSetting->start) <= curPoint)
+		{
+			settingIndex++;
+		}
+	}
+
+
+	CalcType nextFreq = 0;
+
+	auto pCur = &lfoParams->setting[settingIndex];
+	auto pNext = &lfoParams->setting[settingIndex + 1];
+	if (settingIndex < 0)
+	{
+		auto ratio = curPoint / pNext->start;
+		if (pNext->lerp == 1)
+		{
+			nextFreq = pNext->cycleMsec * sampleRate / 1000.0f;
+			percent = Lerp(0.0f, pNext->percent, (float)ratio);
+		}
+		else {
+			return;
+		}
+	}
+	//次の設定と補完するのか、最後なのか
+	else if (settingIndex < lfoParams->settings - 1 && pNext->lerp!=0)
+	{
+		auto ratio = (curPoint - pCur->start) / (pNext->start - pCur->start);
+		nextFreq = Lerp(pCur->cycleMsec, pNext->cycleMsec, (float)ratio) * sampleRate / 1000.0f;
+		percent = Lerp(pCur->percent, pNext->percent, (float)ratio);
+	}
+	else
+	{
+		nextFreq = pCur->cycleMsec * sampleRate / 1000.0f;
+		percent = pCur->percent;
+	}
+
+	if (sampleProgress == 0)
+	{
+		freqSample = nextFreq;
+	}
+}
 
 template<typename CalcT>
 template<int Channels>
@@ -779,10 +914,6 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 	auto Abs = [](auto v)
 	{
 		return v < 0 ? -v : v;
-	};
-	auto Lerp=[](CalcType a, CalcType b, CalcType ratio) ->CalcType
-	{
-		return a * (CalcType(1) - ratio) + b * ratio;
 	};
 	auto msecToSamples = [sampleRate = sampleRate_](CalcType msec)
 	{
@@ -892,9 +1023,11 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				}
 			case TypedCommand::ECommand::LFO:
 				{
-					LfoState& lfo = cmd.lfo.type == 0 ? status_.lfoVolume : status_.lfoTone;
-					lfo.freqSample = cmd.lfo.cycleMsec * sampleRate_ / 1000;
-					lfo.percent = cmd.lfo.percent;
+					LfoState& lfo = (cmd.lfo.type%2) == 0 ? status_.lfoVolume : status_.lfoTone;
+					lfo.lfoParams = &cmd.lfo;
+					lfo.settingIndex = -1;
+					lfo.freqSample = 0;//cmd.lfo.cycleMsec * sampleRate_ / 1000;
+					lfo.percent = 0;// cmd.lfo.percent;
 				}
 				break;
 			default:
@@ -904,7 +1037,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			continue;
 		}
 
-		auto div2Set = [this, Lerp](const ToneData* tone, const CalcType& baseFreqSamples)
+		auto div2Set = [this](const ToneData* tone, const CalcType& baseFreqSamples)
 		{
 			//ランダム周波数時は次の半分の周波数を決定
 			if (tone->randomRange != 0)
@@ -963,9 +1096,19 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			//以前がスラーなら進行位置維持する
 			if (status_.slurTo == 0)
 			{
-				status_.toneSamples = 0;
+				status_.lfoTone.settingIndex = -1;
+				status_.lfoTone.percent = 0;
+				status_.lfoTone.sampleProgress = 0;
+				status_.lfoVolume.settingIndex = -1;
+				status_.lfoVolume.percent = 0;
+				status_.lfoVolume.sampleProgress = 0;
+
 				status_.waveStep = 0;
 				status_.waveDiv2InSample = 0;
+
+				status_.toneSamples = CalcType(sampleRate_) * 60 * 4 * cmd.note.noteTotalLength / NoteLengthResolutio / lengthInfo.bpm;
+				status_.toneCurSample = 0;
+
 				div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
 			}
 
@@ -986,6 +1129,10 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 		if (!status_.toneOff)
 		{
 			auto restSample = CalcType(status_.noteSamples - status_.noteProcedSamples);
+
+			//LFOパラメータ切り替え検出
+			status_.lfoTone.updateSetting(&status_, sampleRate_);
+			status_.lfoVolume.updateSetting(&status_, sampleRate_);
 
 			//半周期が終わった
 			if (CalcType(status_.waveDiv2InSample) > status_.waveFreqDiv2)
@@ -1008,7 +1155,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				//LFOによる変動
 				if (status_.lfoTone.percent != 0)
 				{
-					auto t = mod(CalcType(status_.toneSamples), status_.lfoTone.freqSample);
+					auto t = mod(CalcType(status_.lfoTone.sampleProgress), status_.lfoTone.freqSample);
 					t /= status_.lfoTone.freqSample;
 #ifdef USE_CALCED_SIN_TABLE
 					t *= CalcType(360);
@@ -1164,7 +1311,7 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			//ボリュームLFO
 			if (status_.lfoVolume.percent != 0)
 			{
-				auto t = mod(CalcType(status_.toneSamples), status_.lfoVolume.freqSample);
+				auto t = mod(CalcType(status_.lfoVolume.sampleProgress), status_.lfoVolume.freqSample);
 				t /= status_.lfoVolume.freqSample;
 #ifdef USE_CALCED_SIN_TABLE
 				t *= CalcType(360);
@@ -1195,8 +1342,15 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 		}
 
 		status_.waveDiv2InSample+=1;
-		++status_.noteProcedSamples;
-		++status_.toneSamples;
+		status_.noteProcedSamples++;
+		status_.toneCurSample++;
+
+
+		if(status_.lfoTone.freqSample!=0)
+			status_.lfoTone.sampleProgress = mod(status_.lfoTone.sampleProgress + 1, status_.lfoTone.freqSample);
+		if (status_.lfoVolume.freqSample != 0)
+			status_.lfoVolume.sampleProgress = mod(status_.lfoVolume.sampleProgress + 1, status_.lfoVolume.freqSample);
+
 		if (status_.noteProcedSamples == status_.noteSamples)
 			status_.commandIdx++;
 

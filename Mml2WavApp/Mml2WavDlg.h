@@ -120,4 +120,9 @@ private:
 	bool isDirty_ = false;
 	HACCEL hAcc_;
 
+public:
+	afx_msg void OnAccPlay();
+	afx_msg void OnAccStop();
+private:
+	CButton chkEmulate8Bit_;
 };

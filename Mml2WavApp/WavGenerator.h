@@ -38,8 +38,11 @@ namespace MmlUtility
 		NotSupportInfinityLoop,
 		
 		IliegalLfoType,
+		IllegalFormatLfoCommand,//エンベロープコマンドの書式が間違っている
+		LfoStartGreatorBeforeStart,
 	};
 
+	constexpr int LfoSettingParams = 6;
 
 	//波形タイプ
 	enum class EWaveCurveType {
@@ -94,9 +97,10 @@ namespace MmlUtility
 		};
 
 		struct NoteParam {
-			CalcType toneFreq;	//tone freq.
+			CalcType toneFreq;			//tone freq.
 			CalcType length;			//NoteLengthResolutio単位の長さ
-			int SlurToCmdIdx;	//次の音と接続する
+			CalcType noteTotalLength;	//スラーを考慮した合計の長さ
+			int SlurToCmdIdx;			//次の音と接続する
 		};
 		struct EnvelopeParam {
 			CalcType atackTime;		//msec
@@ -124,23 +128,35 @@ namespace MmlUtility
 		};
 		struct LFO
 		{
-			int type;	//0:音量 1:音程
-			CalcType cycleMsec;
-			CalcType percent;
+			int type;	//0:音量 1:音程 2:音量開始%start 3:音程開始%start
+			int settings;
+			struct Setting
+			{
+				float start;			 //msec or %
+				int lerp;
+				float cycleMsec;
+				float percent;
+			};
+			Setting setting[LfoSettingParams];
 		};
 		union {
 			NoteParam note;
 			EnvelopeParam envelope;
 			WaveDefine wave;
-			uint8_t waveCurve;
-			CalcType slurCrossPoint;
 			LoopCommand loop;
 			LFO lfo;
+			uint8_t waveCurve;
+			CalcType slurCrossPoint;
 			int bpm;
 			int vol;
 			int pan; //127=center
-			int64_t buffer[12];
+			int64_t buffer[13];
 		};
+		static_assert(sizeof(buffer) >= sizeof(note));
+		static_assert(sizeof(buffer) >= sizeof(envelope));
+		static_assert(sizeof(buffer) >= sizeof(wave));
+		static_assert(sizeof(buffer) >= sizeof(loop));
+		static_assert(sizeof(buffer) >= sizeof(lfo));
 		ECommand command;
 		int isCurrent;
 	};
@@ -215,8 +231,13 @@ namespace MmlUtility
 			CalcType envelopeSustainLevel;
 
 		};
+		struct PlayStatus;
 		struct LfoState {
+			void updateSetting(const PlayStatus* playStatus, int sampleRate);
+			const struct MmlCommand<CalcType>::LFO* lfoParams;
+			int settingIndex;
 			CalcType freqSample;
+			CalcType sampleProgress;
 			CalcType percent;	//0だと動作しない
 		};
 		struct PlayStatus {
@@ -235,7 +256,9 @@ namespace MmlUtility
 
 			int noteSamples;		//現在処理中のコマンドのサンプル数
 			int noteProcedSamples;	//処理済み
-			int toneSamples;		//発音のたびにリセットされるサンプルカウンター
+
+			int toneSamples;		//現在の音の総サンプル数
+			int toneCurSample;		//現在の音のサンプル位置
 
 			bool toneOff;
 			CalcType baseFreqSamples;

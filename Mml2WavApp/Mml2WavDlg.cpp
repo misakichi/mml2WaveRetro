@@ -94,6 +94,7 @@ void CMml2WavDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_CHK_EXTERNAL_IMPORT_INVALIDATE_TEMPO_COMMAND, chkInvalidateTempoCommand_);
 	DDX_Control(pDX, IDC_CHK_DIVIDE_IMPORT_VOL_ENABLE_BANKS, chkDivideImportVol_);
 	DDX_Control(pDX, IDC_TXT_LEVEL_NOISE, txtLevelNoise_);
+	DDX_Control(pDX, IDC_CHK_EMULATE_8BIT, chkEmulate8Bit_);
 }
 
 BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
@@ -131,6 +132,8 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_COMMAND(ID_ACC_NEW_FILE, &CMml2WavDlg::OnCmdNewFile)
 	ON_COMMAND(ID_ACC_OPEN_FILE, &CMml2WavDlg::OnCmdOpenFile)
 	ON_COMMAND(ID_ACC_SAVE_FILE, &CMml2WavDlg::OnCmdSaveFile)
+	ON_COMMAND(ID_ACC_PLAY, &CMml2WavDlg::OnAccPlay)
+	ON_COMMAND(ID_ACC_STOP, &CMml2WavDlg::OnAccStop)
 END_MESSAGE_MAP()
 
 
@@ -174,7 +177,7 @@ BOOL CMml2WavDlg::OnInitDialog()
 	cboCurve_.SetCurSel(0);
 	cboDuty_.SetCurSel(49);
 	cboFloatType_.SetCurSel(1);
-	cboSampleRate_.SetCurSel(1);
+	cboSampleRate_.SetCurSel(6);
 	txtNoise_.SetWindowText("0");
 	txtDutySwictTiming_.SetWindowText("0");
 
@@ -268,14 +271,18 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 
 	int sampleRate = 44100;
 	auto genWrapper = [&](auto dummyCalcTypeVariable, MmlUtility::GenerateMmlToPcmResult& result)
-	{
-		switch (cboSampleRate_.GetCurSel())
-		{
-		case 0: sampleRate = 44100;	break;
-		case 1: sampleRate = 48000;	break;
-		case 2: sampleRate = 96000;	break;
-		case 3: sampleRate = 192000; break;
-		}											
+	{			  
+		CString rateStr;
+		cboSampleRate_.GetWindowText(rateStr);
+		rateStr.Replace(",", "");
+		sampleRate = atoi(rateStr);
+		//switch (cboSampleRate_.GetCurSel())
+		//{
+		//case 0: sampleRate = 44100;	break;
+		//case 1: sampleRate = 48000;	break;
+		//case 2: sampleRate = 96000;	break;
+		//case 3: sampleRate = 192000; break;
+		//}											
 
 		constexpr int TestTab = 1000;
 		auto currentTab = tabBank_.GetCurSel() - 1;
@@ -307,6 +314,11 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			std::array<std::string,BANKS> dummyBanks;
 			dummyBanks[currentTab] = bank_[currentTab];
 			ret = MmlUtility::generateMmlToPcm<2, decltype(dummyCalcTypeVariable), BANKS>(result, shared_, dummyBanks, sampleRate, currentTab, curStart);
+		}
+		if (chkEmulate8Bit_.GetCheck())
+		{
+			for (auto& v : result.pcm)
+				v = v / 256 * 256;
 		}
 
 		dest.startSample = result.pcmStartOffset;
@@ -383,6 +395,8 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			errDetail[ErrorReson::LoopNestOver] = "ループネスト数が限界を超えた";
 			errDetail[ErrorReson::NotSupportInfinityLoop] = "無限ループはサポートしていません";
 			errDetail[ErrorReson::IliegalLfoType] = "存在しないLFOタイプ";
+			errDetail[ErrorReson::IllegalFormatLfoCommand] = "LFOの書式が間違っている";
+			errDetail[ErrorReson::LfoStartGreatorBeforeStart] = "LFOの開始位置がその前の開始位置より大きくないといけない";
 
 			errMsg += "\n";
 			errMsg += errDetail[result.result];
@@ -541,6 +555,17 @@ void CMml2WavDlg::play(bool isCheckWave)
 	playing_.push_back(playParam);
 }
 
+
+void CMml2WavDlg::OnAccPlay()
+{
+	play(false);
+}
+
+
+void CMml2WavDlg::OnAccStop()
+{
+	OnBnClickedBtn();
+}
 
 void CMml2WavDlg::OnBnClickedBtn()
 {
@@ -1154,7 +1179,7 @@ void CMml2WavDlg::OnCmdOpenFile()
 void CMml2WavDlg::OnCmdSaveAsFile()
 {
 	filePath_ = "";
-	OnCmdOpenFile();
+	OnCmdSaveFile();
 }
 
 
@@ -1200,3 +1225,4 @@ BOOL CMml2WavDlg::PreTranslateMessage(MSG* pMsg)
 		return TRUE;
 	return CDialogEx::PreTranslateMessage(pMsg);
 }
+
