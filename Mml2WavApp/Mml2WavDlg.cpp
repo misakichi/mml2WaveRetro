@@ -398,6 +398,15 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			errDetail[ErrorReson::IllegalFormatLfoCommand] = "LFOの書式が間違っている";
 			errDetail[ErrorReson::LfoStartGreatorBeforeStart] = "LFOの開始位置がその前の開始位置より大きくないといけない";
 
+
+			errDetail[ErrorReson::CanNotStartMacroInTuple]  = "連符の最中にマクロ記録を始めることはできません";
+			errDetail[ErrorReson::CanNotStartMacroInLoop]  = "ループの最中にマクロ記録を始めることはできません";
+			errDetail[ErrorReson::CanNotStartMacroInMacroo]  = "マクロのの最中にマクロ記録を始めることはできません";
+			errDetail[ErrorReson::CanNotEndMacroInTuple]  = "連符の最中にマクロ記録を終えることはできません";
+			errDetail[ErrorReson::CanNotEndMacroInLoop]  = "ループの最中にマクロ記録を終えることはできません";
+			errDetail[ErrorReson::CanNotCallMacroInTuple] = "連符中にマクロを呼び出すことはできません";
+			errDetail[ErrorReson::IliegalMacroCharacter] = "マクロの文字が不正です";
+
 			errMsg += "\n";
 			errMsg += errDetail[result.result];
 

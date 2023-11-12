@@ -40,6 +40,14 @@ namespace MmlUtility
 		IliegalLfoType,
 		IllegalFormatLfoCommand,//エンベロープコマンドの書式が間違っている
 		LfoStartGreatorBeforeStart,
+
+		CanNotStartMacroInTuple,
+		CanNotStartMacroInLoop,
+		CanNotStartMacroInMacroo,
+		CanNotEndMacroInTuple,
+		CanNotEndMacroInLoop,
+		CanNotCallMacroInTuple,
+		IliegalMacroCharacter,
 	};
 
 	constexpr int LfoSettingParams = 6;
@@ -61,6 +69,20 @@ namespace MmlUtility
 		float levelNoise = 0;
 		std::vector<float> dutyRatio; //通常の波形が50(%)
 	};
+
+	template<typename CalcT = CFixFloat<int64_t, 16>>
+	class BiQuadLpf
+	{
+	public:
+		using CalcType = CalcT;
+		BiQuadLpf();
+
+		CalcType lpf(CalcType value, CalcType freq, int samplerate);
+
+		CalcType in[2];
+		CalcType out[2];
+	};
+
 	template<typename CalcT = CFixFloat<int64_t, 16>>
 	class MmlCommand
 	{
@@ -268,6 +290,7 @@ namespace MmlUtility
 			CalcType waveDiv2InSample; //波形の半分プラマイの片方側分がどれだけ処理されたか
 			int isSlurFrom;
 			CalcType slurTo;	//次のノートとスラーの時の、次のノートのbaseFreqSamples
+			CalcType duty; //ノイズ用duty維持
 			
 			Envelope envelopes[EnvelopeMax];
 			Envelope* currentEnvelope = &envelopes[0];
@@ -281,7 +304,7 @@ namespace MmlUtility
 		uint32_t sampleRate_;
 		uint32_t volumeMax_ = 255; //Max of "V" command value
 
-
+		BiQuadLpf<CalcType> lpf_;
 	};
 
 	struct GenerateMmlToPcmResult
@@ -292,6 +315,17 @@ namespace MmlUtility
 		std::vector<int16_t> pcm;
 		size_t pcmStartOffset;
 	};
+
+	template<unsigned Channels, typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
+	class MultiBankMml 
+	{
+	public:
+
+	private:
+		WavGenerator<CalcT> bank_[Banks];
+
+	};
+
 	template<unsigned Channels, typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
 	bool generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank=0, size_t currentCursor=0);
 

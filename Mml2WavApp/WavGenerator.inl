@@ -16,6 +16,39 @@ inline MmlUtility::WavGenerator<CalcT>::WavGenerator()
 #define NUM_CHECK(ch)	if((ch)<'0' || (ch)>'9') return genError(ErrorReson::RequireNumberError)
 
 template<typename CalcT>
+MmlUtility::BiQuadLpf<CalcT>::BiQuadLpf()
+{
+	memset(in, 0, sizeof(in));
+	memset(out, 0, sizeof(out));
+}
+template<typename CalcT>
+CalcT MmlUtility::BiQuadLpf<CalcT>::lpf(CalcType value, CalcType freq, int samplerate)
+{
+	CalcType q = CalcType(1 / sqrt(2));
+	CalcType omega = CalcType(2.0) * CalcType(M_PI) * freq / samplerate;
+	CalcType alpha = CalcType(sin((float)omega)) / (CalcType(2.0f) * q);
+	CalcType cosOmega = CalcType(cos((float)omega));
+
+	CalcType a0 = CalcType(1.0f) + alpha;
+	CalcType a1 = CalcType (-2.0f) * cosOmega;
+	CalcType a2 = CalcType(1.0f) - alpha;
+	CalcType b0 = (CalcType(1.0f) - cosOmega) / CalcType(2.0f);
+	CalcType b1 = CalcType(1.0f) - cosOmega;
+	CalcType b2 = (CalcType(1.0f) - cosOmega) / CalcType(2.0f);
+
+	CalcType output = b0 / a0 * value + b1 / a0 * in[0] + b2 / a0 * in[1]
+		- a1 / a0 * out[0] - a2 / a0 * out[1];
+
+	in[1] = in[0];
+	in[0] = value;
+
+	out[1] = out[0];
+	out[0] = output;
+
+	return output;
+}
+
+template<typename CalcT>
 inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::vector<TypedCommand>& dest, size_t* errorPoint, ErrorReson* reason, size_t current)
 {
 	static const CalcType toneScaleFreq[] =
@@ -118,7 +151,23 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		CalcType(3951.066), //B
 	};
 
+	//マクロ管理
 	std::vector<TypedCommand> commands;
+	std::vector<TypedCommand> macroCommands['Z'-'A'+1];
+	int macroRegster = -1;
+
+	//連符管理
+	constexpr int TupletMax = 32;
+	int tupletIndex = -1;
+	TypedCommand tuplet[TupletMax];
+
+	//ループ管理
+	int loopIndex = -1;
+	int loopStartIndex[LoopNestMax] = {};
+
+
+
+
 	auto end = mml + strlen(mml);
 	auto p = mml;
 	
@@ -210,20 +259,16 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		return false;
 	};
 
-	//連符管理
-	constexpr int TupletMax = 32;
-	int tupletIndex = -1;
-	TypedCommand tuplet[TupletMax];
-
-	//ループ管理
-	int loopIndex = -1;
-	int loopStartIndex[LoopNestMax] = {};
-
-
 	int lastToneIndex = -1;
 	int slurFromCmdIndex = -1;
 	while (p < end)
 	{
+		std::vector<TypedCommand>* addCommands = &commands;
+		if (macroRegster >= 0)
+		{
+			addCommands = &macroCommands[macroRegster];
+		}
+
 		auto c = *p++;
 		//コメント *<comment>*
 		if (c == '*')
@@ -263,7 +308,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			tupleLength /= tupletIndex;
 			for (auto& tuple : tuplet)
 				tuple.note.length = tupleLength;
-			commands.insert(commands.end(), &tuplet[0], &tuplet[tupletIndex]);
+			addCommands->insert(addCommands->end(), &tuplet[0], &tuplet[tupletIndex]);
 
 			tupletIndex = -1;
 		}
@@ -276,14 +321,14 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			if (LoopNestMax <= loopIndex)
 				return genError(ErrorReson::LoopNestOver);
 
-			loopStartIndex[loopIndex] = commands.size();
+			loopStartIndex[loopIndex] = addCommands->size();
 
 			TypedCommand cmd;
 			cmd.command = TypedCommand::ECommand::Loop;
 			cmd.loop.type = 0;
 			cmd.loop.num = 0;
 			cmd.loop.id = loopIndex;
-			commands.push_back(cmd);
+			addCommands->push_back(cmd);
 		}
 		else if (c == ']')
 		{
@@ -303,9 +348,9 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmd.loop.id = loopIndex;
 			auto loopStart = loopStartIndex[loopIndex];
 			cmd.loop.pairIndex = loopStart;
-			commands[loopStart].loop.pairIndex = commands.size();
-			commands[loopStart].loop.num = loops;
-			commands.push_back(cmd);
+			(*addCommands)[loopStart].loop.pairIndex = addCommands->size();
+			(*addCommands)[loopStart].loop.num = loops;
+			addCommands->push_back(cmd);
 
 			loopIndex--;
 		}
@@ -321,7 +366,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmd.loop.id = loopIndex;
 			auto loopStart = loopStartIndex[loopIndex];
 			cmd.loop.pairIndex = loopStart;
-			commands.push_back(cmd);
+			addCommands->push_back(cmd);
 
 		}
 		else if ((c >= 'A' && c <= 'G') || c=='X' || c == 'R' || c == 'N')
@@ -439,11 +484,11 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 
 			if (slurFromCmdIndex != -1)
 			{
-				commands[slurFromCmdIndex].note.SlurToCmdIdx = (int)commands.size();
+				(*addCommands)[slurFromCmdIndex].note.SlurToCmdIdx = (int)addCommands->size();
 			}
 
 			slurFromCmdIndex = -1;
-			lastToneIndex = (int)commands.size();
+			lastToneIndex = (int)addCommands->size();
 			cmd.note.length = len;
 			cmd.note.SlurToCmdIdx = -1;
 
@@ -458,7 +503,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			}
 			else
 			{
-				commands.push_back(cmd);
+				addCommands->push_back(cmd);
 			}
 		}
 		else if (c == 'O')
@@ -511,7 +556,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmdPan.pan = getNumI();
 			if (cmdPan.pan < 0 || cmdPan.pan>256)
 				return genError(ErrorReson::PanOutOfRange);
-			commands.push_back(cmdPan);
+			addCommands->push_back(cmdPan);
 	}
 		else if (c == 'V')
 		{
@@ -521,7 +566,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmdVol.vol = getNumI();
 			if (cmdPan.vol < 0 || cmdPan.vol>255)
 				return genError(ErrorReson::VolumeOutOfRange);
-			commands.push_back(cmdVol);
+			addCommands->push_back(cmdVol);
 
 		}
 		else if (c == 'T')
@@ -532,8 +577,38 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmdTempo.bpm = getNumI();
 			if (cmdTempo.bpm == 0)
 				return genError(ErrorReson::IllegalValueTempo);
-			commands.push_back(cmdTempo);
+			addCommands->push_back(cmdTempo);
 
+		}
+		else if (c == '!')
+		{
+			if (macroRegster >= 0)
+			{
+				//マクロ終了
+				if (tupletIndex >= 0)
+					return genError(ErrorReson::CanNotEndMacroInTuple);
+				if (loopIndex >= 0)
+					return genError(ErrorReson::CanNotEndMacroInLoop);
+				macroRegster = -1;
+			}
+			else
+			{
+				//マクロ呼び出し
+				if (*p < 'A' || *p>'Z')
+					return genError(ErrorReson::IliegalMacroCharacter);
+				if (tupletIndex >= 0)
+					return genError(ErrorReson::CanNotCallMacroInTuple);
+
+				int macroIndex = *p++ - 'A';
+				auto currentLast = addCommands->size();
+				addCommands->insert(addCommands->end(), macroCommands[macroIndex].begin(), macroCommands[macroIndex].end());
+				for (size_t i = currentLast; i < addCommands->size(); i++)
+				{
+					TypedCommand& icmd = (*addCommands)[i];
+					if(icmd.command == TypedCommand::ECommand::Loop)
+						icmd.loop.pairIndex += currentLast;
+				}
+			}
 		}
 		else if (c == '@')
 		{
@@ -545,10 +620,28 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				if (cmdType.waveCurve < 0 || cmdType.waveCurve > ToneMax)
 					return genError(ErrorReson::WaveNoOutOfRange);
 
-				commands.push_back(cmdType);
+				addCommands->push_back(cmdType);
+			}
+			else if (*p == '!')
+			{
+				++p;
+				//マクロ
+				if (tupletIndex >= 0)
+					return genError(ErrorReson::CanNotStartMacroInTuple);
+				if (loopIndex >= 0)
+					return genError(ErrorReson::CanNotStartMacroInLoop);
+				if (macroRegster >= 0)
+					return genError(ErrorReson::CanNotStartMacroInMacroo);
+
+				if (*p < 'A' || *p>'Z')
+					return genError(ErrorReson::IliegalMacroCharacter);
+
+				macroRegster = *p++ - 'A';
+				macroCommands[macroRegster].clear();
 			}
 			else if (*p == 'S')
 			{
+				//スラークロスポイント
 				++p;
 				TypedCommand cmdTempo;
 				cmdTempo.command = TypedCommand::ECommand::SlurCrossPoint;
@@ -558,7 +651,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 					return genError(ErrorReson::IllegalValue);
 
 				cmdTempo.slurCrossPoint = CalcType(1) / base;
-				commands.push_back(cmdTempo);
+				addCommands->push_back(cmdTempo);
 			}
 			else if (*p == 'L')
 			{
@@ -627,7 +720,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				}
 				cmdLfo.lfo.settings = settings;
 
-				commands.push_back(cmdLfo);
+				addCommands->push_back(cmdLfo);
 
 
 			}
@@ -669,7 +762,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 					cmdType.envelope.sustainLevel = getNumI();
 					if (cmdType.envelope.sustainLevel > 255)
 						return genError(ErrorReson::IllegalParameterRange);
-					commands.push_back(cmdType);
+					addCommands->push_back(cmdType);
 				}
 				else
 				{
@@ -681,7 +774,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 					{
 						return genError(ErrorReson::IllegalParameterRange);
 					}
-					commands.push_back(cmdType);
+					addCommands->push_back(cmdType);
 				}
 			}
 			else if (*p == 'W')
@@ -733,7 +826,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				if (duties == 0)
 					return genError(ErrorReson::WaveDefineNoneDuty);
 				cmdType.wave.duties = duties;
-				commands.push_back(cmdType);
+				addCommands->push_back(cmdType);
 
 			}
 		}
@@ -744,10 +837,10 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		}
 
 		auto offset = p - mml;
-		if (commands.size()>0 && current < offset)
+		if (addCommands->size()>0 && current < offset)
 		{
 			current = SIZE_T_MAX;
-			commands.back().isCurrent = 1;
+			addCommands->back().isCurrent = 1;
 		}
 	}
 
@@ -1039,6 +1132,8 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 
 		auto div2Set = [this](const ToneData* tone, const CalcType& baseFreqSamples)
 		{
+			auto duty = tone->dutyRatio[status_.dutyIndex % tone->dutyRatio.size()];
+			status_.duty = duty;
 			//ランダム周波数時は次の半分の周波数を決定
 			if (tone->randomRange != 0)
 			{
@@ -1050,7 +1145,6 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 			//通常時はbaseとdutyから決定
 			else
 			{
-				auto duty = tone->dutyRatio[status_.dutyIndex % tone->dutyRatio.size()];
 				auto dutyCt = CalcType(status_.waveStep == 0 ? duty : 100 - duty);
 				status_.waveFreqDiv2 = baseFreqSamples * dutyCt / 100;
 
@@ -1267,8 +1361,10 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				}
 			case EWaveCurveType::Noise:
 				{
-					auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;
-					level = noise;
+					auto duty = status_.duty;					
+					auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;					
+					level = lpf_.lpf(noise, Lerp(CalcType(sampleRate_)/2-200, cmd.note.toneFreq, duty/100), sampleRate_);
+					//level = Lerp(noise, filteredNoise, duty / 100);
 					break;
 				}
 			}
@@ -1383,7 +1479,7 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 	defaultTone[3].dutyRatio.push_back(50);
 
 	defaultTone[4].curve = EWaveCurveType::Noise;
-	defaultTone[4].dutyRatio.push_back(50);
+	defaultTone[4].dutyRatio.push_back(0);
 
 	defaultTone[5].curve = EWaveCurveType::Rectangle;
 	defaultTone[5].dutyRatio.push_back(33.33333333f);
