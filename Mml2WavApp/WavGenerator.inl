@@ -1363,7 +1363,9 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 				{
 					auto duty = status_.duty;					
 					auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;					
-					level = lpf_.lpf(noise, Lerp(CalcType(sampleRate_)/2-200, cmd.note.toneFreq, duty/100), sampleRate_);
+					auto noiseFreq = Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
+					level = lpf_.lpf(noise, noiseFreq, sampleRate_);
+					//level /= noiseFreq / (CalcType(sampleRate_) / 2 - 200);
 					//level = Lerp(noise, filteredNoise, duty / 100);
 					break;
 				}
