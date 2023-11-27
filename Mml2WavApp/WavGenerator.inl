@@ -479,7 +479,15 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 					return genError(ErrorReson::IliegalCommandInTuplet);
 				}
 				p++;
-				len += len / 2;
+				if (*p == '.')
+				{
+					p++;
+					len = len + len / 2 + len / 4;
+				}
+				else
+				{
+					len = len + len / 2;
+				}
 			}
 
 			if (slurFromCmdIndex != -1)
@@ -539,7 +547,15 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			if (*p == '.')
 			{
 				p++;
-				state.len += state.len / 2;
+				if (*p == '.')
+				{
+					p++;
+					state.len = state.len + state.len/2 + state.len/4;
+				}
+				else
+				{
+					state.len = state.len + state.len /2;
+				}
 			}
 
 		}
