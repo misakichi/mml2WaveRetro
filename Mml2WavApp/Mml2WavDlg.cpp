@@ -972,7 +972,7 @@ void CMml2WavDlg::OnBnClickedBtnImportExternalMmlFromClipboard()
 		if (str != NULL)
 		{
 			CString importStr((char*)str);
-			loadMml(importStr, true);
+			loadMml(importStr, true, true);
 
 			GlobalUnlock(hClip);
 
@@ -981,7 +981,7 @@ void CMml2WavDlg::OnBnClickedBtnImportExternalMmlFromClipboard()
 	CloseClipboard();
 }
 
-void CMml2WavDlg::loadMml(CString importStr, bool isVolumeControl)
+void CMml2WavDlg::loadMml(CString importStr, bool isVolumeControl, bool isImport)
 {
 	importStr = importStr.MakeUpper();
 
@@ -1007,11 +1007,11 @@ void CMml2WavDlg::loadMml(CString importStr, bool isVolumeControl)
 	if (endPos != -1)
 		importStr = importStr.Left(endPos);
 
-	bool invalidateTempo = chkInvalidateTempoCommand_.GetCheck() != 0;
+	bool invalidateTempo = isImport && chkInvalidateTempoCommand_.GetCheck() != 0;
 
 	importStr.Replace("\t", "");
 
-	if (!isSharedOk)
+	if (!isSharedOk && isImport)
 	{
 		if (importStr[0] == 'T')
 		{

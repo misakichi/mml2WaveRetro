@@ -105,7 +105,7 @@ private:
 	void play(bool isCheckWave);
 	bool closeFile();
 
-	void loadMml(CString str, bool isVolumeControl);
+	void loadMml(CString str, bool isVolumeControl, bool isImport = false);
 	void setWindowText();
 
 	CString genWaveCommand();
