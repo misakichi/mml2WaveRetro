@@ -7,7 +7,6 @@
 #include "WavGenerator.h"
 #include <array>
 
-struct WaveOutParam;
 
 class CEditEx : public CEdit
 {
@@ -30,8 +29,125 @@ public:
 	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV サポート
 
 
-// 実装
+	enum { BANKS = 5 };
+
+	class GeneratorWrapper
+	{
+	public:
+		template<typename T>
+		void reset()
+		{
+			delete generator1_;
+			delete generator2_;
+			delete generator3_;
+		}
+
+		template<>
+		void reset<CFixFloat<>>()
+		{
+			reset<void>();
+			generator1_ = new MmlUtility::MultiBankMml<CFixFloat<>, BANKS>();
+		}
+
+		template<>
+		void reset<float>()
+		{
+			reset<void>();
+			generator2_ = new MmlUtility::MultiBankMml<float, BANKS>();
+		}
+		template<>
+		void reset<double>()
+		{
+			reset<void>();
+			generator3_ = new MmlUtility::MultiBankMml<double, BANKS>();
+		}
+		MmlUtility::GenerateMmlToPcmResult compile(const std::string& prepareSharedMml, const std::array<std::string, BANKS>& bankMml, int sampleRate = 48000, size_t currentBank = 0, size_t currentCursor = 0)
+		{
+			if (generator1_)
+				return generator1_->compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);
+			if (generator2_)
+				return generator2_->compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);
+			if (generator3_)
+				return generator3_->compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);
+			return {};
+		}
+		inline void skipToCurrent()
+		{
+			if (generator1_)
+				return generator1_->skipToCurrent();
+			if (generator2_)
+				return generator2_->skipToCurrent();
+			if (generator3_)
+				return generator3_->skipToCurrent();
+			return;
+		}
+		template<unsigned Channel, typename Type> inline std::vector<Type> generate(int samples)
+		{
+			if (generator1_)
+				return generator1_->generate<Channel,Type>(samples);
+			if (generator2_)
+				return generator2_->generate<Channel, Type>(samples);
+			if (generator3_)
+				return generator3_->generate<Channel, Type>(samples);
+			return {};
+		}
+		void setLoop(bool loop)
+		{
+			if (generator1_)
+				return generator1_->setLoop(loop);
+			if (generator2_)
+				return generator2_->setLoop(loop);
+			if (generator3_)
+				return generator3_->setLoop(loop);
+		}
+		void setDisableInfinityLoop(bool disableInfinityLoop)
+		{
+			if (generator1_)
+				return generator1_->setDisableInfinityLoop(disableInfinityLoop);
+			if (generator2_)
+				return generator2_->setDisableInfinityLoop(disableInfinityLoop);
+			if (generator3_)
+				return generator3_->setDisableInfinityLoop(disableInfinityLoop);
+		}
+		bool isPlayEnd() const
+		{
+			if (generator1_)
+				return generator1_->isPlayEnd();
+			if (generator2_)
+				return generator2_->isPlayEnd();
+			if (generator3_)
+				return generator3_->isPlayEnd();
+			return false;
+		}
+	private:
+
+		MmlUtility::MultiBankMml<CFixFloat<>, BANKS>* generator1_ = nullptr;
+		MmlUtility::MultiBankMml<float, BANKS>* generator2_ = nullptr;
+		MmlUtility::MultiBankMml<double, BANKS>* generator3_ = nullptr;
+	};
+public:
+	static constexpr size_t StreamingBuffurSize = 2048;
+
+	struct WaveOutParam {
+		static constexpr size_t Buffers = 4;
+		GeneratorWrapper* generator_ = NULL;
+		HWAVEOUT hWaveOut_ = NULL;
+		int bufferWIndex = 0;
+		int bufferRIndex = 0;
+		WAVEHDR nowHeader[Buffers] = {};
+		int16_t pcmBuffer_[Buffers][2048];
+		bool loopPlay_ = false;
+		bool exitPlay_ = false;
+	};
+	void writePcm(bool isZero=false);
+	void waveOutCallbackProc(
+		HWAVEOUT  hwo,
+		UINT      uMsg
+	);
+
+	// 実装
 protected:
+
 	HICON m_hIcon;
 
 	// 生成された、メッセージ割り当て関数
@@ -46,8 +162,6 @@ private:
 	struct WavData
 	{
 		WAVEFORMATEX format;
-		size_t startSample;
-		std::vector<int16_t> data;
 	};
 
 	CEditEx txtMml_;
@@ -101,7 +215,7 @@ private:
 
 	void RefreshDutyList();
 	void SetEnvelopeTemplate(int no);
-	bool genWavData(WavData& dest, bool checkMml=false);
+	GeneratorWrapper* genWavReady(WavData& dest, bool checkMml=false);
 	void play(bool isCheckWave);
 	bool closeFile();
 
@@ -110,9 +224,8 @@ private:
 
 	CString genWaveCommand();
 
-	std::vector<WaveOutParam*> playing_;
+	volatile WaveOutParam* playing_;
 
-	enum { BANKS=5};
 	std::string shared_;
 	std::array<std::string, BANKS> bank_;
 
@@ -120,9 +233,9 @@ private:
 	bool isDirty_ = false;
 	HACCEL hAcc_;
 
-public:
 	afx_msg void OnAccPlay();
 	afx_msg void OnAccStop();
-private:
 	CButton chkEmulate8Bit_;
+
+	//GeneratorWrapper* generator_;
 };

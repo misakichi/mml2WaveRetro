@@ -337,9 +337,13 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			if(loopIndex<0)
 				return genError(ErrorReson::IlieagalLoopEndNotLoop);
 
-			int loops = getNumI();
-			if (loops <= 0)
-				return genError(ErrorReson::NotSupportInfinityLoop);
+			int loops = -1;
+			if ((*p) >= '0' && (*p) <= '9')
+			{
+				loops = getNumI();
+				if (loops <= 0)
+					return genError(ErrorReson::InvalidLoopNums);
+			}
 
 			TypedCommand cmd;
 			cmd.command = TypedCommand::ECommand::Loop;
@@ -350,7 +354,24 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmd.loop.pairIndex = loopStart;
 			(*addCommands)[loopStart].loop.pairIndex = addCommands->size();
 			(*addCommands)[loopStart].loop.num = loops;
+
+			bool hasTone = false;
+			for (auto it = addCommands->begin() + loopStart; it != addCommands->end(); it++)
+			{
+				hasTone |= it->command == TypedCommand::ECommand::ToneNote;
+			}
+
+			if(hasTone==false)
+				return genError(ErrorReson::NotFountToneLoop);
+
+
+			if (current!=SIZE_T_MAX)
+			{
+				return genError(ErrorReson::CurrentPositionAfterInfinityLoop);
+			}
+
 			addCommands->push_back(cmd);
+
 
 			loopIndex--;
 		}
@@ -880,6 +901,14 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		}
 	}
 
+	if (current != SIZE_T_MAX)
+	{
+		TypedCommand cmdType;
+		cmdType.command = TypedCommand::ECommand::NOP;
+		cmdType.isCurrent = true;
+		commands.push_back(cmdType);		
+	}
+
 	dest.swap(commands);
 	return true;
 }
@@ -891,7 +920,7 @@ inline void MmlUtility::WavGenerator<CalcT>::setTone(int no, const ToneData& ton
 }
 
 template<typename CalcT>
-inline bool MmlUtility::WavGenerator<CalcT>::ready(uint32_t sampleRate)
+inline bool MmlUtility::WavGenerator<CalcT>::ready(uint32_t sampleRate, bool loopPlay)
 {
 	if (tones_.empty())
 		return false;
@@ -902,6 +931,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::ready(uint32_t sampleRate)
 		return false;
 
 	sampleRate_ = sampleRate;
+	loopPlay_ = loopPlay;
 
 	status_.commandIdx = 0;
 	status_.noteProcedSamples = 0;
@@ -1012,462 +1042,20 @@ void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::
 }
 
 template<typename CalcT>
-template<int Channels>
-inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* currentOffset)
+template<unsigned Channels, typename Type>
+inline std::vector<Type> MmlUtility::WavGenerator<CalcT>::generateSamples(unsigned samples)
 {
 	static_assert(Channels == 1 || Channels == 2);
 
-	std::vector<int16_t> result;
-	const ToneData* tone = nullptr; //nullの場合そのコマンドの情報を集め直すのだろう
-
-	auto Abs = [](auto v)
+	std::vector<Type> result;
+	result.resize(samples * Channels);
+	Type* dst = result.begin();
+	while (samples--)
 	{
-		return v < 0 ? -v : v;
-	};
-	auto msecToSamples = [sampleRate = sampleRate_](CalcType msec)
-	{
-		auto sample = msec* sampleRate / 1000;
-		return sample;
-	};
-
-	while (1)
-	{
-	//REPROC1:
-		if (status_.commandIdx >= commands_.size())
-		{
-			return result;
-		}
-		const TypedCommand& cmd = commands_[status_.commandIdx];
-		if (cmd.command != TypedCommand::ECommand::ToneNote)
-		{
-			if (currentOffset && cmd.isCurrent != 0)
-			{
-				*currentOffset = result.size() / Channels;
-			}
-			switch (cmd.command)
-			{
-			case TypedCommand::ECommand::Volume:
-				status_.volume = CalcType(cmd.vol) / volumeMax_;
-				break;
-			case TypedCommand::ECommand::Pan:
-				status_.pan = cmd.pan;
-				break;
-			case TypedCommand::ECommand::Tempo:
-				status_.bpm = cmd.bpm;
-				break;
-			case TypedCommand::ECommand::ToneType:
-				status_.toneIndex = cmd.waveCurve;
-				break;
-			case TypedCommand::ECommand::SlurCrossPoint:
-				status_.slurCrossPoint = cmd.slurCrossPoint;
-				break;
-			case TypedCommand::ECommand::EnvelopeDefine:
-				{
-					if (cmd.envelope.no >= 0)
-					{
-						auto& dstEnv = status_.envelopes[cmd.envelope.no];
-						dstEnv.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
-						dstEnv.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
-						dstEnv.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
-						dstEnv.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
-						dstEnv.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
-					}
-					else
-					{
-						for (auto& dstEnv : status_.envelopes)
-						{
-							dstEnv.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
-							dstEnv.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
-							dstEnv.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
-							dstEnv.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
-							dstEnv.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
-						}
-					}
-				}
-				break;
-			case TypedCommand::ECommand::EnvelopeCall:
-				status_.currentEnvelope = &status_.envelopes[cmd.envelope.no];
-				break;
-			case TypedCommand::ECommand::WaveDefine:
-			{
-				MmlUtility::ToneData& tone = tones_[cmd.wave.no];
-				tone.curve = decltype(tone.curve)(cmd.wave.type);
-				tone.cycle= cmd.wave.cycle;
-				tone.randomRange = cmd.wave.random;
-				tone.levelNoise = cmd.wave.levelNoise;
-				tone.dutyRatio.clear();
-				tone.dutyRatio.insert(tone.dutyRatio.end(), cmd.wave.duty, cmd.wave.duty + cmd.wave.duties);
-				break;
-			}
-			case TypedCommand::ECommand::Loop:
-				{
-					switch (cmd.loop.type)
-					{
-					case 0:
-						//start
-						status_.loopNum[cmd.loop.id] = cmd.loop.num;
-						break;
-					case 1:
-						//end
-						if (status_.loopNum[cmd.loop.id] > 0)
-						{
-							--status_.loopNum[cmd.loop.id];
-						}
-						if (status_.loopNum[cmd.loop.id] != 0)
-						{
-							status_.commandIdx = cmd.loop.pairIndex + 1;
-							continue;
-						}
-						break;
-					case 2:
-						//exit
-						if (status_.loopNum[cmd.loop.id] <= 1)
-						{
-							auto endIdx = commands_[cmd.loop.pairIndex].loop.pairIndex;
-							status_.commandIdx = endIdx;
-						}
-						break;
-					}
-					break;
-				}
-			case TypedCommand::ECommand::LFO:
-				{
-					LfoState& lfo = (cmd.lfo.type%2) == 0 ? status_.lfoVolume : status_.lfoTone;
-					lfo.lfoParams = &cmd.lfo;
-					lfo.settingIndex = -1;
-					lfo.freqSample = 0;//cmd.lfo.cycleMsec * sampleRate_ / 1000;
-					lfo.percent = 0;// cmd.lfo.percent;
-				}
-				break;
-			default:
-				break;
-			}
-			status_.commandIdx++;
-			continue;
-		}
-
-		auto div2Set = [this](const ToneData* tone, const CalcType& baseFreqSamples)
-		{
-			auto duty = tone->dutyRatio[status_.dutyIndex % tone->dutyRatio.size()];
-			status_.duty = duty;
-			//ランダム周波数時は次の半分の周波数を決定
-			if (tone->randomRange != 0)
-			{
-				auto random = (CalcType(100) - CalcType(tone->randomRange)) + (CalcType(rand()) / RAND_MAX) * (CalcType(tone->randomRange) * 2);
-				auto freq = baseFreqSamples * random / 200;
-				status_.waveFreqDiv2 = freq;
-
-			}
-			//通常時はbaseとdutyから決定
-			else
-			{
-				auto dutyCt = CalcType(status_.waveStep == 0 ? duty : 100 - duty);
-				status_.waveFreqDiv2 = baseFreqSamples * dutyCt / 100;
-
-			}
-		};
-
-		if (status_.noteProcedSamples == status_.noteSamples)
-		{
-			if (currentOffset && cmd.isCurrent != 0)
-			{
-				*currentOffset = result.size() / Channels;
-			}
-			//新規コマンドです
-			uint64_t oldSamples = 0;
-			uint64_t samples = 0;
-			for (auto& li : status_.recentLength)
-				oldSamples += li.samples;
-
-			if (status_.recentLength.empty() || status_.recentLength.back().bpm != status_.bpm)
-			{
-				status_.recentLength.push_back({ status_.bpm,0 });
-			}
-			auto& lengthInfo = status_.recentLength.back();
-			lengthInfo.length += cmd.note.length;
-
-			//sampleRate_ * 60 = 1分間のサンプル数
-			//bpm=1分間の四分音符数
-			//length=分解能単位の長さ
-			//bpm * 4 / length 
-			lengthInfo.samples = CalcType(sampleRate_) * 60 * 4* lengthInfo.length / NoteLengthResolutio / lengthInfo.bpm;
-		
-			for (auto& li : status_.recentLength)
-				samples += li.samples;
-
-			status_.dutyIndex = 0;
-			status_.dutyCycleRq = 0;
-			status_.noteSamples = int(samples- oldSamples);
-			status_.noteProcedSamples = 0;
-			status_.toneOff = cmd.note.toneFreq == 0;
-			status_.baseFreqSamples = status_.toneOff ? CalcType(0) : CalcType(sampleRate_) / cmd.note.toneFreq;
-			status_.isSlurFrom = status_.slurTo != 0;
-
-			//以前がスラーなら進行位置維持する
-			if (status_.slurTo == 0)
-			{
-				status_.lfoTone.settingIndex = -1;
-				status_.lfoTone.percent = 0;
-				status_.lfoTone.sampleProgress = 0;
-				status_.lfoVolume.settingIndex = -1;
-				status_.lfoVolume.percent = 0;
-				status_.lfoVolume.sampleProgress = 0;
-
-				status_.waveStep = 0;
-				status_.waveDiv2InSample = 0;
-
-				status_.toneSamples = CalcType(sampleRate_) * 60 * 4 * cmd.note.noteTotalLength / NoteLengthResolutio / lengthInfo.bpm;
-				status_.toneCurSample = 0;
-
-				div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
-			}
-
-			status_.slurTo = 0;
-			//次がスラー
-			if (cmd.note.SlurToCmdIdx != -1)
-			{
-				auto& nextCmd = commands_[cmd.note.SlurToCmdIdx];
-				status_.slurTo = CalcType(sampleRate_) / nextCmd.note.toneFreq;
-			}
-
-		}
-		tone = &tones_[status_.toneIndex];
-		CalcType toneSwitchSample = tone->cycle == 0 ? CalcType(0) : CalcType(sampleRate_) * tone->cycle / 1000;
-
-		int16_t sample = 0;
-	REPROC2:
-		if (!status_.toneOff)
-		{
-			auto restSample = CalcType(status_.noteSamples - status_.noteProcedSamples);
-
-			//LFOパラメータ切り替え検出
-			status_.lfoTone.updateSetting(&status_, sampleRate_);
-			status_.lfoVolume.updateSetting(&status_, sampleRate_);
-
-			//半周期が終わった
-			if (CalcType(status_.waveDiv2InSample) > status_.waveFreqDiv2)
-			{
-				//半周期開始
-				status_.waveDiv2InSample -= status_.waveFreqDiv2;
-
-				//スラーで変動するので変数に入れる
-				auto baseFreqSamples = status_.baseFreqSamples;
-				if (status_.slurTo != 0)
-				{
-					auto crossSamples = (status_.slurCrossPoint * status_.noteSamples);
-					if (crossSamples >= restSample)
-					{
-						auto ratio = restSample / crossSamples;
-						baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
-					}
-				}
-
-				//LFOによる変動
-				if (status_.lfoTone.percent != 0)
-				{
-					auto t = mod(CalcType(status_.lfoTone.sampleProgress), status_.lfoTone.freqSample);
-					t /= status_.lfoTone.freqSample;
-#ifdef USE_CALCED_SIN_TABLE
-					t *= CalcType(360);
-					auto level = sinTable_[int(inRatio * 100) % 36000];
-#else
-					t *= CalcType(2 * M_PI);
-					auto modify = CalcType(sinf((float)t));
-#endif
-					float shift = (float)(modify * status_.lfoTone.percent);
-					if (shift < 0) {
-						baseFreqSamples /= powf(2.0f, (double)abs(shift) / 12);
-					}
-					else if (shift > 0) {
-						baseFreqSamples *= pow((double)2, (double)(shift) / 12);
-					}
-				}
-
-
-				//マイナス側が終了した
-				if (status_.waveStep == 1)
-				{
-					if (restSample < baseFreqSamples && cmd.note.SlurToCmdIdx == -1)
-					{
-						//スラーOFF時もう収めることができないなら発音終了
-						status_.toneOff = true;
-						goto REPROC2;
-					}
-					else
-					{
-						//毎回切替時はDuty比変更
-						if (toneSwitchSample == 0 || status_.dutyCycleRq != 0)
-						{
-							status_.dutyCycleRq = 0;
-							++status_.dutyIndex;
-						}
-					}
-				}
-
-				//プラマイ切り替え
-				status_.waveStep = (status_.waveStep + 1) % 2;
-
-
-				div2Set(tone, baseFreqSamples);
-
-			}
-			else
-			{
-				//スラーを少しずつでも反映する場合はここを有効にする
-				//if (status_.slurTo != 0)
-				//{
-				//	auto baseFreqSamples = status_.baseFreqSamples;
-				//	auto crossSamples = (status_.slurCrossPoint * status_.noteSamples);
-				//	if (crossSamples >= restSample)
-				//	{
-				//		auto ratio = restSample / crossSamples;
-				//		baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
-				//	}
-				//	div2Set(tone, baseFreqSamples);
-				//}
-			}
-
-			//時間によるDuty比切り替え
-			if (toneSwitchSample != 0 && toneSwitchSample * (status_.dutyIndex + 1) < status_.noteProcedSamples)
-			{
-				status_.dutyCycleRq = 1;
-			}
-
-
-			//波形（-1～1)生成
-			CalcType level(0);
-			switch (tone->curve)
-			{
-			case EWaveCurveType::Rectangle:
-				{
-					if (status_.waveStep == 0)
-						level = CalcType(1);
-					else
-						level = CalcType(-1);
-					break;
-				}
-			case EWaveCurveType::Triangle:
-				{
-					auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
-					inRatio = CalcType(1) - Abs(inRatio - CalcType(0.5)) * 2;
-					level = status_.waveStep == 0 ? inRatio : -inRatio;
-					break;
-				}
-			case EWaveCurveType::Saw:
-				{
-					auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
-					if (status_.waveStep == 0)
-						inRatio -= CalcType(1.0);
-					level = inRatio;
-					break;
-				}
-			case EWaveCurveType::Sin:
-				{
-					auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
-#ifdef USE_CALCED_SIN_TABLE
-					inRatio *= CalcType(180);
-					inRatio += status_.waveStep == 0 ? CalcType(0) : CalcType(180);
-					level = sinTable_[int(inRatio * 100) % 36000];
-#else
-					inRatio *= CalcType(M_PI);
-					inRatio += status_.waveStep == 0 ? CalcType(0) : CalcType(M_PI);
-					level = CalcType(sinf((float)inRatio));
-#endif
-					break;
-				}
-			case EWaveCurveType::Noise:
-				{
-					auto duty = status_.duty;					
-					auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;					
-					auto noiseFreq = Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
-					level = lpf_.lpf(noise, noiseFreq, sampleRate_);
-					//level /= noiseFreq / (CalcType(sampleRate_) / 2 - 200);
-					//level = Lerp(noise, filteredNoise, duty / 100);
-					break;
-				}
-			}
-			//ボリューム値ADSRによる音量調整
-			auto fNowSample = CalcType(status_.noteProcedSamples);
-			const auto& envelope = *status_.currentEnvelope;
-			CalcType adsr = envelope.envelopeSustainLevel;
-			if (fNowSample < envelope.envelopeAtackSamples)
-			{
-				//A
-				if (status_.isSlurFrom == 0)
-				{
-					adsr = fNowSample / envelope.envelopeAtackSamples * envelope.envelopeAtackLevel;
-				}
-			}
-			else if (fNowSample < envelope.envelopeAtackSamples + envelope.envelopeDecaySamples)
-			{
-				//D
-				if (status_.isSlurFrom == 0)
-				{
-					auto ratio = (fNowSample - envelope.envelopeAtackSamples) / envelope.envelopeDecaySamples;
-					adsr = Lerp(envelope.envelopeAtackLevel, envelope.envelopeSustainLevel, ratio);
-				}
-			}
-			else if (restSample < envelope.envelopeReleaseSamples)
-			{
-				//R
-				if (status_.slurTo == 0)
-				{
-					adsr = restSample / envelope.envelopeReleaseSamples * envelope.envelopeSustainLevel;
-				}
-			}
-
-			//ボリュームノイズ
-			if (tone->levelNoise != 0)
-			{
-				auto modify = CalcType(1.0) - (CalcType(rand()) / RAND_MAX * tone->levelNoise / 100);
-				level *= modify;
-			}
-			//ボリュームLFO
-			if (status_.lfoVolume.percent != 0)
-			{
-				auto t = mod(CalcType(status_.lfoVolume.sampleProgress), status_.lfoVolume.freqSample);
-				t /= status_.lfoVolume.freqSample;
-#ifdef USE_CALCED_SIN_TABLE
-				t *= CalcType(360);
-				auto level = sinTable_[int(inRatio * 100) % 36000];
-#else
-				t *= CalcType(2 * M_PI);
-				auto modify = CalcType(sinf((float)t));
-#endif
-				modify *= status_.lfoVolume.percent;
-				level *= (CalcType(1.0)-modify);
-
-			}
-			sample = (std::max)(SHORT_MIN, (std::min)(SHORT_MAX, (int)(level * adsr * status_.volume * SHORT_MAX)));
-		}
-
-
-		if constexpr (Channels == 1)
-		{
-			result.push_back(sample);
-		}
-		else if constexpr (Channels==2)
-		{
-			//sample = (CalcType(0.7f) + (CalcType(rand()) / RAND_MAX) * 3/ 10) * sample;
-			//L
-			result.push_back(sample * (256 - status_.pan) / 256);
-			//R
-			result.push_back(sample * (status_.pan) / 256);
-		}
-
-		status_.waveDiv2InSample+=1;
-		status_.noteProcedSamples++;
-		status_.toneCurSample++;
-
-
-		if(status_.lfoTone.freqSample!=0)
-			status_.lfoTone.sampleProgress = mod(status_.lfoTone.sampleProgress + 1, status_.lfoTone.freqSample);
-		if (status_.lfoVolume.freqSample != 0)
-			status_.lfoVolume.sampleProgress = mod(status_.lfoVolume.sampleProgress + 1, status_.lfoVolume.freqSample);
-
-		if (status_.noteProcedSamples == status_.noteSamples)
-			status_.commandIdx++;
-
+		auto one = generateSample();
+		*dst++ = one.sample[0];
+		if constexpr (Channels == 2)
+			*dst++ = one.sample[1];
 	}
 
 
@@ -1475,13 +1063,516 @@ inline std::vector<int16_t> MmlUtility::WavGenerator<CalcT>::generate(size_t* cu
 }
 
 
-template<unsigned Channels, typename CalcT, int Banks>
-bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
+template<typename SetType>
+class SetTypeValue
 {
-	static_assert(Banks > 0);
+public:
+	template<typename CalcT>
+	SetType operator()(CalcT v)
+	{
+		static_assert(0,"this type not suport.");
+	}
+};
+
+template<>
+class SetTypeValue<int16_t>
+{
+public:
+	template<typename CalcT>
+	int16_t operator()(CalcT v)
+	{
+		return (std::max)(SHORT_MIN, (std::min)(SHORT_MAX, (int)(v * SHORT_MAX)));
+	}
+};
+template<>
+class SetTypeValue<float>
+{
+public:
+	template<typename CalcT>
+	float operator()(CalcT v)
+	{
+		return (float)(v);
+	}
+};
+template<typename CalcT>
+template<unsigned Channels, typename Type>
+MmlUtility::Sample<Channels, Type> MmlUtility::WavGenerator<CalcT>::generate(bool* isCurrent)
+{
+	auto Abs = [](auto v)
+	{
+		return v < 0 ? -v : v;
+	};
+	auto msecToSamples = [sampleRate = sampleRate_](CalcType msec)
+	{
+		auto sample = msec * sampleRate / 1000;
+		return sample;
+	};
+	const ToneData* tone = nullptr; //nullの場合そのコマンドの情報を集め直すのだろう
+	SetTypeValue<Type> setFunc;
+
 	static_assert(Channels == 1 || Channels == 2);
-	dest.pcmStartOffset = 0;
-	std::vector<int16_t> result;
+	Sample<Channels, int16_t> result = {};
+
+TOP:
+	if (status_.commandIdx >= commands_.size())
+	{
+		if (loopPlay_)
+		{
+			status_.commandIdx = 0;
+		}
+		else
+		{
+			return {};
+		}
+	}
+
+
+	const TypedCommand& cmd = commands_[status_.commandIdx];
+	if (cmd.command != TypedCommand::ECommand::ToneNote)
+	{
+		if (isCurrent && cmd.isCurrent != 0)
+		{
+			*isCurrent = true;
+			return result;
+		}
+		switch (cmd.command)
+		{
+		case TypedCommand::ECommand::NOP:
+			break;
+		case TypedCommand::ECommand::Volume:
+			status_.volume = CalcType(cmd.vol) / volumeMax_;
+			break;
+		case TypedCommand::ECommand::Pan:
+			status_.pan = cmd.pan;
+			break;
+		case TypedCommand::ECommand::Tempo:
+			status_.bpm = cmd.bpm;
+			break;
+		case TypedCommand::ECommand::ToneType:
+			status_.toneIndex = cmd.waveCurve;
+			break;
+		case TypedCommand::ECommand::SlurCrossPoint:
+			status_.slurCrossPoint = cmd.slurCrossPoint;
+			break;
+		case TypedCommand::ECommand::EnvelopeDefine:
+			{
+				if (cmd.envelope.no >= 0)
+				{
+					auto& dstEnv = status_.envelopes[cmd.envelope.no];
+					dstEnv.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
+					dstEnv.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
+					dstEnv.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
+					dstEnv.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
+					dstEnv.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
+				}
+				else
+				{
+					for (auto& dstEnv : status_.envelopes)
+					{
+						dstEnv.envelopeAtackSamples = msecToSamples(cmd.envelope.atackTime);
+						dstEnv.envelopeDecaySamples = msecToSamples(cmd.envelope.decayTime);
+						dstEnv.envelopeReleaseSamples = msecToSamples(cmd.envelope.releaseTime);
+						dstEnv.envelopeAtackLevel = CalcType(cmd.envelope.atackLevel) / volumeMax_;
+						dstEnv.envelopeSustainLevel = CalcType(cmd.envelope.sustainLevel) / volumeMax_;
+					}
+				}
+			}
+			break;
+		case TypedCommand::ECommand::EnvelopeCall:
+			status_.currentEnvelope = &status_.envelopes[cmd.envelope.no];
+			break;
+		case TypedCommand::ECommand::WaveDefine:
+			{
+				MmlUtility::ToneData& tone = tones_[cmd.wave.no];
+				tone.curve = decltype(tone.curve)(cmd.wave.type);
+				tone.cycle = cmd.wave.cycle;
+				tone.randomRange = cmd.wave.random;
+				tone.levelNoise = cmd.wave.levelNoise;
+				tone.dutyRatio.clear();
+				tone.dutyRatio.insert(tone.dutyRatio.end(), cmd.wave.duty, cmd.wave.duty + cmd.wave.duties);
+				break;
+			}
+		case TypedCommand::ECommand::Loop:
+			{
+				switch (cmd.loop.type)
+				{
+				case 0:
+					//start
+					status_.loopNum[cmd.loop.id] = cmd.loop.num;
+					if (disableInfinityLoop_ && status_.loopNum[cmd.loop.id] < 0)
+					{
+						status_.loopNum[cmd.loop.id] = 0;
+					}
+					break;
+				case 1:
+					//end
+					if (status_.loopNum[cmd.loop.id] > 0)
+					{
+						--status_.loopNum[cmd.loop.id];
+					}
+					if (status_.loopNum[cmd.loop.id] != 0)
+					{
+						status_.commandIdx = cmd.loop.pairIndex + 1;
+						goto TOP;
+					}
+					break;
+				case 2:
+					//exit
+					if (status_.loopNum[cmd.loop.id] <= 1)
+					{
+						auto endIdx = commands_[cmd.loop.pairIndex].loop.pairIndex;
+						status_.commandIdx = endIdx;
+					}
+					break;
+				}
+				break;
+			}
+		case TypedCommand::ECommand::LFO:
+			{
+				LfoState& lfo = (cmd.lfo.type % 2) == 0 ? status_.lfoVolume : status_.lfoTone;
+				lfo.lfoParams = &cmd.lfo;
+				lfo.settingIndex = -1;
+				lfo.freqSample = 0;//cmd.lfo.cycleMsec * sampleRate_ / 1000;
+				lfo.percent = 0;// cmd.lfo.percent;
+			}
+			break;
+		default:
+			break;
+		}
+		status_.commandIdx++;
+		goto TOP;
+	}
+
+	auto div2Set = [this](const ToneData* tone, const CalcType& baseFreqSamples)
+	{
+		auto duty = tone->dutyRatio[status_.dutyIndex % tone->dutyRatio.size()];
+		status_.duty = duty;
+		//ランダム周波数時は次の半分の周波数を決定
+		if (tone->randomRange != 0)
+		{
+			auto random = (CalcType(100) - CalcType(tone->randomRange)) + (CalcType(rand()) / RAND_MAX) * (CalcType(tone->randomRange) * 2);
+			auto freq = baseFreqSamples * random / 200;
+			status_.waveFreqDiv2 = freq;
+
+		}
+		//通常時はbaseとdutyから決定
+		else
+		{
+			auto dutyCt = CalcType(status_.waveStep == 0 ? duty : 100 - duty);
+			status_.waveFreqDiv2 = baseFreqSamples * dutyCt / 100;
+
+		}
+	};
+
+	if (status_.noteProcedSamples == status_.noteSamples)
+	{
+		if (isCurrent && cmd.isCurrent != 0)
+		{
+			*isCurrent = true;
+			return result;
+		}
+		//新規コマンドです
+		uint64_t oldSamples = 0;
+		uint64_t samples = 0;
+		for (auto& li : status_.recentLength)
+			oldSamples += li.samples;
+
+		if (status_.recentLength.empty() || status_.recentLength.back().bpm != status_.bpm)
+		{
+			status_.recentLength.push_back({ status_.bpm,0 });
+		}
+		auto& lengthInfo = status_.recentLength.back();
+		lengthInfo.length += cmd.note.length;
+
+		//sampleRate_ * 60 = 1分間のサンプル数
+		//bpm=1分間の四分音符数
+		//length=分解能単位の長さ
+		//bpm * 4 / length 
+		lengthInfo.samples = CalcType(sampleRate_) * 60 * 4 * lengthInfo.length / NoteLengthResolutio / lengthInfo.bpm;
+
+		for (auto& li : status_.recentLength)
+			samples += li.samples;
+
+		status_.dutyIndex = 0;
+		status_.dutyCycleRq = 0;
+		status_.noteSamples = int(samples - oldSamples);
+		status_.noteProcedSamples = 0;
+		status_.toneOff = cmd.note.toneFreq == 0;
+		status_.baseFreqSamples = status_.toneOff ? CalcType(0) : CalcType(sampleRate_) / cmd.note.toneFreq;
+		status_.isSlurFrom = status_.slurTo != 0;
+
+		//以前がスラーなら進行位置維持する
+		if (status_.slurTo == 0)
+		{
+			status_.lfoTone.settingIndex = -1;
+			status_.lfoTone.percent = 0;
+			status_.lfoTone.sampleProgress = 0;
+			status_.lfoVolume.settingIndex = -1;
+			status_.lfoVolume.percent = 0;
+			status_.lfoVolume.sampleProgress = 0;
+
+			status_.waveStep = 0;
+			status_.waveDiv2InSample = 0;
+
+			status_.toneSamples = CalcType(sampleRate_) * 60 * 4 * cmd.note.noteTotalLength / NoteLengthResolutio / lengthInfo.bpm;
+			status_.toneCurSample = 0;
+
+			div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
+		}
+
+		status_.slurTo = 0;
+		//次がスラー
+		if (cmd.note.SlurToCmdIdx != -1)
+		{
+			auto& nextCmd = commands_[cmd.note.SlurToCmdIdx];
+			status_.slurTo = CalcType(sampleRate_) / nextCmd.note.toneFreq;
+		}
+
+	}
+	tone = &tones_[status_.toneIndex];
+	CalcType toneSwitchSample = tone->cycle == 0 ? CalcType(0) : CalcType(sampleRate_) * tone->cycle / 1000;
+
+REPROC2:
+	CalcType level(0);
+	if (!status_.toneOff)
+	{
+		auto restSample = CalcType(status_.noteSamples - status_.noteProcedSamples);
+
+		//LFOパラメータ切り替え検出
+		status_.lfoTone.updateSetting(&status_, sampleRate_);
+		status_.lfoVolume.updateSetting(&status_, sampleRate_);
+
+		//半周期が終わった
+		if (CalcType(status_.waveDiv2InSample) > status_.waveFreqDiv2)
+		{
+			//半周期開始
+			status_.waveDiv2InSample -= status_.waveFreqDiv2;
+
+			//スラーで変動するので変数に入れる
+			auto baseFreqSamples = status_.baseFreqSamples;
+			if (status_.slurTo != 0)
+			{
+				auto crossSamples = (status_.slurCrossPoint * status_.noteSamples);
+				if (crossSamples >= restSample)
+				{
+					auto ratio = restSample / crossSamples;
+					baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
+				}
+			}
+
+			//LFOによる変動
+			if (status_.lfoTone.percent != 0)
+			{
+				auto t = mod(CalcType(status_.lfoTone.sampleProgress), status_.lfoTone.freqSample);
+				t /= status_.lfoTone.freqSample;
+#ifdef USE_CALCED_SIN_TABLE
+				t *= CalcType(360);
+				auto level = sinTable_[int(inRatio * 100) % 36000];
+#else
+				t *= CalcType(2 * M_PI);
+				auto modify = CalcType(sinf((float)t));
+#endif
+				float shift = (float)(modify * status_.lfoTone.percent);
+				if (shift < 0) {
+					baseFreqSamples /= powf(2.0f, (double)abs(shift) / 12);
+				}
+				else if (shift > 0) {
+					baseFreqSamples *= pow((double)2, (double)(shift) / 12);
+				}
+			}
+
+
+			//マイナス側が終了した
+			if (status_.waveStep == 1)
+			{
+				if (restSample < baseFreqSamples && cmd.note.SlurToCmdIdx == -1)
+				{
+					//スラーOFF時もう収めることができないなら発音終了
+					status_.toneOff = true;
+					goto REPROC2;
+				}
+				else
+				{
+					//毎回切替時はDuty比変更
+					if (toneSwitchSample == 0 || status_.dutyCycleRq != 0)
+					{
+						status_.dutyCycleRq = 0;
+						++status_.dutyIndex;
+					}
+				}
+			}
+
+			//プラマイ切り替え
+			status_.waveStep = (status_.waveStep + 1) % 2;
+
+
+			div2Set(tone, baseFreqSamples);
+
+		}
+		else
+		{
+			//スラーを少しずつでも反映する場合はここを有効にする
+			//if (status_.slurTo != 0)
+			//{
+			//	auto baseFreqSamples = status_.baseFreqSamples;
+			//	auto crossSamples = (status_.slurCrossPoint * status_.noteSamples);
+			//	if (crossSamples >= restSample)
+			//	{
+			//		auto ratio = restSample / crossSamples;
+			//		baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
+			//	}
+			//	div2Set(tone, baseFreqSamples);
+			//}
+		}
+
+		//時間によるDuty比切り替え
+		if (toneSwitchSample != 0 && toneSwitchSample * (status_.dutyIndex + 1) < status_.noteProcedSamples)
+		{
+			status_.dutyCycleRq = 1;
+		}
+
+
+		//波形（-1～1)生成
+		switch (tone->curve)
+		{
+		case EWaveCurveType::Rectangle:
+			{
+				if (status_.waveStep == 0)
+					level = CalcType(1);
+				else
+					level = CalcType(-1);
+				break;
+			}
+		case EWaveCurveType::Triangle:
+			{
+				auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
+				inRatio = CalcType(1) - Abs(inRatio - CalcType(0.5)) * 2;
+				level = status_.waveStep == 0 ? inRatio : -inRatio;
+				break;
+			}
+		case EWaveCurveType::Saw:
+			{
+				auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
+				if (status_.waveStep == 0)
+					inRatio -= CalcType(1.0);
+				level = inRatio;
+				break;
+			}
+		case EWaveCurveType::Sin:
+			{
+				auto inRatio = CalcType(status_.waveDiv2InSample) / status_.waveFreqDiv2;
+#ifdef USE_CALCED_SIN_TABLE
+				inRatio *= CalcType(180);
+				inRatio += status_.waveStep == 0 ? CalcType(0) : CalcType(180);
+				level = sinTable_[int(inRatio * 100) % 36000];
+#else
+				inRatio *= CalcType(M_PI);
+				inRatio += status_.waveStep == 0 ? CalcType(0) : CalcType(M_PI);
+				level = CalcType(sinf((float)inRatio));
+#endif
+				break;
+			}
+		case EWaveCurveType::Noise:
+			{
+				auto duty = status_.duty;
+				auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;
+				auto noiseFreq = Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
+				level = lpf_.lpf(noise, noiseFreq, sampleRate_);
+				//level /= noiseFreq / (CalcType(sampleRate_) / 2 - 200);
+				//level = Lerp(noise, filteredNoise, duty / 100);
+				break;
+			}
+		}
+		//ボリューム値ADSRによる音量調整
+		auto fNowSample = CalcType(status_.noteProcedSamples);
+		const auto& envelope = *status_.currentEnvelope;
+		CalcType adsr = envelope.envelopeSustainLevel;
+		if (fNowSample < envelope.envelopeAtackSamples)
+		{
+			//A
+			if (status_.isSlurFrom == 0)
+			{
+				adsr = fNowSample / envelope.envelopeAtackSamples * envelope.envelopeAtackLevel;
+			}
+		}
+		else if (fNowSample < envelope.envelopeAtackSamples + envelope.envelopeDecaySamples)
+		{
+			//D
+			if (status_.isSlurFrom == 0)
+			{
+				auto ratio = (fNowSample - envelope.envelopeAtackSamples) / envelope.envelopeDecaySamples;
+				adsr = Lerp(envelope.envelopeAtackLevel, envelope.envelopeSustainLevel, ratio);
+			}
+		}
+		else if (restSample < envelope.envelopeReleaseSamples)
+		{
+			//R
+			if (status_.slurTo == 0)
+			{
+				adsr = restSample / envelope.envelopeReleaseSamples * envelope.envelopeSustainLevel;
+			}
+		}
+
+		//ボリュームノイズ
+		if (tone->levelNoise != 0)
+		{
+			auto modify = CalcType(1.0) - (CalcType(rand()) / RAND_MAX * tone->levelNoise / 100);
+			level *= modify;
+		}
+		//ボリュームLFO
+		if (status_.lfoVolume.percent != 0)
+		{
+			auto t = mod(CalcType(status_.lfoVolume.sampleProgress), status_.lfoVolume.freqSample);
+			t /= status_.lfoVolume.freqSample;
+#ifdef USE_CALCED_SIN_TABLE
+			t *= CalcType(360);
+			auto level = sinTable_[int(inRatio * 100) % 36000];
+#else
+			t *= CalcType(2 * M_PI);
+			auto modify = CalcType(sinf((float)t));
+#endif
+			modify *= status_.lfoVolume.percent;
+			level *= (CalcType(1.0) - modify);
+
+		}
+		level = level* adsr* status_.volume;
+	}
+
+
+	if constexpr (Channels == 1)
+	{
+		result.sample[0] = setFunc(level);
+	}
+	else if constexpr (Channels == 2)
+	{
+		//sample = (CalcType(0.7f) + (CalcType(rand()) / RAND_MAX) * 3/ 10) * sample;
+		//L
+		result.sample[0] = setFunc(level);
+		//R
+		result.sample[1] = setFunc(level);
+	}
+
+	status_.waveDiv2InSample += 1;
+	status_.noteProcedSamples++;
+	status_.toneCurSample++;
+
+
+	if (status_.lfoTone.freqSample != 0)
+		status_.lfoTone.sampleProgress = mod(status_.lfoTone.sampleProgress + 1, status_.lfoTone.freqSample);
+	if (status_.lfoVolume.freqSample != 0)
+		status_.lfoVolume.sampleProgress = mod(status_.lfoVolume.sampleProgress + 1, status_.lfoVolume.freqSample);
+
+	if (status_.noteProcedSamples == status_.noteSamples)
+		status_.commandIdx++;
+
+	return result;
+}
+
+template<typename CalcT, int Banks>
+MmlUtility::GenerateMmlToPcmResult MmlUtility::MultiBankMml<CalcT,Banks>::compile(const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
+{
+	GenerateMmlToPcmResult dest;
+	static_assert(Banks > 0);
 	//基本値
 	ToneData defaultTone[WavGenerator<CalcT>::ToneMax] = {};
 	defaultTone[0].curve = EWaveCurveType::Rectangle;
@@ -1531,10 +1622,11 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 	//パン　128=センター
 	const char* defaultSetting = "T120O4L4V128@0@S4@ED0:15:15:30:255:200P128";
 
+	compiled_ = true;
 	//処理に時間がかかるならここはマルチスレッド化すると良い
 	for (int i = 0; i < Banks; i++)
 	{
-		WavGenerator<CalcT> generator;
+		auto& generator = bank_[i];
 		std::vector<WavGenerator<CalcT>::TypedCommand> commands;
 		std::string mml = defaultSetting;
 		auto defaultSize = mml.length();
@@ -1545,8 +1637,10 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 		for (int i = 0; i < WavGenerator<CalcT>::ToneMax; i++)
 			generator.setTone(i, defaultTone[i]);
 
+		auto bankCurrent = currentBank == i ? currentCursor + sharedSize : 0;
+
 		generator.setVolumeMax(255);
-		if (!generator.compileMml(mml.c_str(), commands, &dest.errPos, &dest.result, currentCursor + sharedSize))
+		if (!generator.compileMml(mml.c_str(), commands, &dest.errPos, &dest.result, bankCurrent))
 		{
 			if (dest.errPos < defaultSize)
 			{
@@ -1557,32 +1651,105 @@ bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::strin
 				dest.errBank = -1;
 				dest.errPos -= defaultSize;
 			}
-			else 
+			else
 			{
 				dest.errBank = i;
 				dest.errPos -= sharedSize;
 			}
-			return false;
+			return dest;
 		}
-		generator.addCommand(commands);
-		generator.ready(sampleRate);
-		size_t* startSample = nullptr;
-		if (i == currentBank)
+
+		bool hasTone = false;
+		for (auto it = commands.begin(); it != commands.end(); it++)
 		{
-			startSample = &dest.pcmStartOffset;
+			hasTone |= it->command == WavGenerator<CalcT>::TypedCommand::ECommand::ToneNote;
 		}
-		auto pcm = generator.generate<Channels>(startSample);
-		if (pcm.size() > result.size())
-			result.resize(pcm.size());
-		auto dst = result.begin();
-		for (auto src : pcm)
-			*dst++ += src;
+
+		if(hasTone)
+			generator.addCommand(commands);
+
+		generator.ready(sampleRate);
+
+		//size_t* startSample = nullptr;
+		//if (i == currentBank)
+		//{
+		//	startSample = &dest.pcmStartOffset;
+		//}
+		//auto pcm = generator.generate<Channels>(startSample);
+		//if (pcm.size() > result.size())
+		//	result.resize(pcm.size());
+		//auto dst = result.begin();
+		//for (auto src : pcm)
+		//	*dst++ += src;
+		currentBank_ = currentBank;
+		currentCursor_ = currentCursor;
+		compiled_ &= dest.result == ErrorReson::NoError;
+	}
+	return dest;
+}
+
+template<typename CalcT, int Banks>
+void MmlUtility::MultiBankMml<CalcT, Banks>::skipToCurrent()
+{
+	if (currentCursor_ > 0)
+	{
+		//現在字になるまで読み捨て
+		bool isCurrent = false; 
+		size_t offset = 0;
+		while (!isCurrent)
+		{
+			
+			bank_[currentBank_].generate<1,int16_t>(&isCurrent);
+			offset++;
+		}
+
+		//他のバンクも読み捨て
+		for (int i = 0; i < Banks; i++)
+		{
+			if (i == currentBank_)
+				continue;
+			auto skipSamples = offset;
+			while (skipSamples--)
+				bank_[i].generate<1, int16_t>();
+		}
+	}
+}
+
+template<typename CalcT, int Banks>
+template<unsigned Channel, typename Type>
+inline std::vector<Type> MmlUtility::MultiBankMml<CalcT, Banks>::generate(int samples)
+{
+	static_assert(Channel == 1 || Channel == 2);
+	
+	std::vector<Type> result;
+	result.resize(samples* Channel);
+	for (int i = 0; i < Banks; i++)
+	{
+		auto it = result.begin();
+		auto num = samples;
+		while (num--)
+		{
+			auto one = bank_[i].generate<Channel, Type>();
+			*it++ += one.sample[0];
+			if constexpr (Channel==2)
+				*it++ += one.sample[1];
+		}
+	}
+	return result;
+}
+
+template<unsigned Channels, typename CalcT, int Banks>
+bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
+{
+	MultiBankMml<CalcT, Banks> generator;
+	auto result = generator.compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);
+	if (result.result != ErrorReson::NoError)
+	{
+		dest = result;
+		return false;
 	}
 
-	dest.errPos = 0;
-	dest.result = ErrorReson::NoError;
-	dest.pcm.swap(result);
-
+	generator.skipToCurrent();
 
 	return true;
 }

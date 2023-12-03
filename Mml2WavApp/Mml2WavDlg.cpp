@@ -15,6 +15,7 @@
 #define new DEBUG_NEW
 #endif
 
+
 BOOL CEditEx::PreTranslateMessage(MSG* pMsg)
 {
 	if (pMsg->message == WM_KEYDOWN && pMsg->wParam == 'A' && (GetKeyState(VK_CONTROL)&0x8000)!=0)
@@ -266,41 +267,37 @@ void CMml2WavDlg::RefreshDutyList()
 }
 
 
-bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
-{
 
+CMml2WavDlg::GeneratorWrapper* CMml2WavDlg::genWavReady(WavData& dest, bool checkMml)
+{
+	
 	int sampleRate = 44100;
-	auto genWrapper = [&](auto dummyCalcTypeVariable, MmlUtility::GenerateMmlToPcmResult& result)
+	auto readyGenerator = [&](auto dummyCalcTypeVariable, MmlUtility::GenerateMmlToPcmResult& result)->GeneratorWrapper*
 	{			  
 		CString rateStr;
 		cboSampleRate_.GetWindowText(rateStr);
 		rateStr.Replace(",", "");
 		sampleRate = atoi(rateStr);
-		//switch (cboSampleRate_.GetCurSel())
-		//{
-		//case 0: sampleRate = 44100;	break;
-		//case 1: sampleRate = 48000;	break;
-		//case 2: sampleRate = 96000;	break;
-		//case 3: sampleRate = 192000; break;
-		//}											
-
+		bool ret = false;
 		constexpr int TestTab = 1000;
 		auto currentTab = tabBank_.GetCurSel() - 1;
-		int curStart, curEnd;
-		txtMml_.GetSel(curStart, curEnd);
-		bool ret = false;
+		int curStart = 0, curEnd = 0;
+		if(chkFromCurrent_.GetCheck()!=0)
+			txtMml_.GetSel(curStart, curEnd);
+		
+		auto generator = new GeneratorWrapper();
+		generator->reset<decltype(dummyCalcTypeVariable)>();
 		if (chkCurrentBank_.GetCheck() == 0 && !checkMml)
 		{
-			ret = MmlUtility::generateMmlToPcm<2, decltype(dummyCalcTypeVariable), BANKS>(result, shared_, bank_, sampleRate, currentTab, curStart);
+			result = generator->compile(shared_, bank_, sampleRate, currentTab, curStart);
 		}
 		else if (checkMml)
 		{
 			CString mml;
 			GetDlgItem(IDC_TXT_WAVE_TEST)->GetWindowText(mml);
-			std::array<std::string, 1> dummyBanks;
+			std::array<std::string, BANKS> dummyBanks;
 			dummyBanks[0] = genWaveCommand() + mml;
-			ret = MmlUtility::generateMmlToPcm<2, decltype(dummyCalcTypeVariable), 1>(result, shared_, dummyBanks, sampleRate, 0, curStart);
-
+			result = generator->compile(shared_, dummyBanks, sampleRate, 0, 0);
 		}
 		else
 		{
@@ -308,22 +305,17 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			{
 				MessageBox("共通タブのみを再生することはできません");
 				result.errBank = -3;
-				return false;
+				return nullptr;
 			}
 
 			std::array<std::string,BANKS> dummyBanks;
 			dummyBanks[currentTab] = bank_[currentTab];
-			ret = MmlUtility::generateMmlToPcm<2, decltype(dummyCalcTypeVariable), BANKS>(result, shared_, dummyBanks, sampleRate, currentTab, curStart);
+			result = generator->compile(shared_, dummyBanks, sampleRate, currentTab, curStart);
 		}
-		if (chkEmulate8Bit_.GetCheck())
-		{
-			for (auto& v : result.pcm)
-				v = v / 256 * 256;
-		}
+		generator->skipToCurrent();
 
-		dest.startSample = result.pcmStartOffset;
 		
-		if (!ret)
+		if (result.result!= MmlUtility::ErrorReson::NoError)
 		{
 			std::string errMsg = "error:";
 			if (result.errBank == -2)
@@ -393,7 +385,7 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			errDetail[ErrorReson::IlieagalLoopCommandInTuplet] = "連符内でループコマンドが出現した";
 			errDetail[ErrorReson::IlieagalLoopEndNotLoop] = "ループ開始していないのにループ終了が来た";
 			errDetail[ErrorReson::LoopNestOver] = "ループネスト数が限界を超えた";
-			errDetail[ErrorReson::NotSupportInfinityLoop] = "無限ループはサポートしていません";
+			errDetail[ErrorReson::InvalidLoopNums] = "不正なループ回数指定";
 			errDetail[ErrorReson::IliegalLfoType] = "存在しないLFOタイプ";
 			errDetail[ErrorReson::IllegalFormatLfoCommand] = "LFOの書式が間違っている";
 			errDetail[ErrorReson::LfoStartGreatorBeforeStart] = "LFOの開始位置がその前の開始位置より大きくないといけない";
@@ -406,6 +398,8 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			errDetail[ErrorReson::CanNotEndMacroInLoop]  = "ループの最中にマクロ記録を終えることはできません";
 			errDetail[ErrorReson::CanNotCallMacroInTuple] = "連符中にマクロを呼び出すことはできません";
 			errDetail[ErrorReson::IliegalMacroCharacter] = "マクロの文字が不正です";
+			errDetail[ErrorReson::CurrentPositionAfterInfinityLoop] = "現在位置が無限ループよりあとにある";
+			errDetail[ErrorReson::NotFountToneLoop] = "ループ内に音がなるコマンドがない";
 
 			errMsg += "\n";
 			errMsg += errDetail[result.result];
@@ -413,22 +407,25 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 			MessageBox(errMsg.c_str());
 		}
 
-		return ret;
+		return generator;
 
 	};
 	MmlUtility::GenerateMmlToPcmResult result;
 	bool ret = false;
+	GeneratorWrapper* generator = nullptr;
 	switch (cboFloatType_.GetCurSel())
 	{
-	case 0: ret = genWrapper(CFixFloat<>(), result); break;
-	case 1: ret = genWrapper(float(0.0f), result); break;
-	case 2: ret = genWrapper(double(0.0), result); break;
+	case 0: generator = readyGenerator(CFixFloat<>(), result); break;
+	case 1: generator = readyGenerator(float(0.0f), result); break;
+	case 2: generator = readyGenerator(double(0.0), result); break;
 	}
-	if (result.result!= MmlUtility::ErrorReson::NoError)
-		return false;
+	if (generator==nullptr || result.result != MmlUtility::ErrorReson::NoError)
+	{
+		delete generator;
+		return nullptr;
+	}
 
 	WAVEFORMATEX& format = dest.format;
-	dest.data.swap(result.pcm);
 	memset(&format, 0, sizeof(format));
 	format.wFormatTag = WAVE_FORMAT_PCM;
 	format.nChannels = 2;
@@ -438,16 +435,8 @@ bool CMml2WavDlg::genWavData(WavData& dest, bool checkMml)
 	format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
 	format.cbSize = sizeof(format);
 
-	return true;
+	return generator;
 }
-
-struct WaveOutParam {
-	HWAVEOUT hWaveOut_;
-	std::vector<int16_t> pcmBuffer_;
-	bool loopPlay_ = false;
-	size_t playOffsetSamples_ = 0;
-	WAVEHDR nowHeader;
-};
 
 
 
@@ -459,51 +448,43 @@ void CALLBACK waveOutCallbackProc(
 	DWORD_PTR dwParam2
 )
 {
-	auto param = (WaveOutParam*)dwInstance;
-
+	auto pThis = (CMml2WavDlg*)dwInstance;
+	pThis->waveOutCallbackProc(hwo, uMsg);
+}
+void CMml2WavDlg::waveOutCallbackProc(
+	HWAVEOUT  hwo,
+	UINT      uMsg
+)
+{
+	auto param = (WaveOutParam*)playing_;
 	bool isWrite = false;
 	switch (uMsg)
 	{
 	case WOM_OPEN:
-	{
-		param->playOffsetSamples_ = 0;
+		
 		break;
-	}
 	case WOM_DONE:
 	{
-		param->playOffsetSamples_ = 0;
-		isWrite = param->loopPlay_;
+		isWrite = param->generator_->isPlayEnd() == false;
+		auto ridx = (param->bufferRIndex++) % WaveOutParam::Buffers;
+		WAVEHDR& header = param->nowHeader[ridx];
+		auto result = waveOutUnprepareHeader(hwo, &header, sizeof(header));
+		if (result != 0)
+			OutputDebugString("failed waveOutUnprepareHeader.");
 		break;
 	}
 	case WOM_CLOSE:
+		for(int i=0;i< WaveOutParam::Buffers;i++)
+			waveOutUnprepareHeader(param->hWaveOut_, &param->nowHeader[i], sizeof(param->nowHeader[i]));
 		param->hWaveOut_ = NULL;
-		param->pcmBuffer_.clear();
 		break;
 	}
 
-	if (isWrite)
+	if (isWrite && param->exitPlay_==false)
 	{
-		WAVEHDR& header = param->nowHeader;
-		memset(&header, 0, sizeof(header));
-		auto offsets = param->playOffsetSamples_ * 2;
-		header.lpData = (char*)param->pcmBuffer_.data() + (offsets * sizeof(int16_t));
-		header.dwBufferLength = (DWORD)((param->pcmBuffer_.size() - offsets) * sizeof(int16_t));
-		header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
-		header.dwLoops = 1;
-
-		//MMSYSERR_NOMEM
-		auto result = waveOutUnprepareHeader(hwo, &param->nowHeader, sizeof(param->nowHeader));
-		if (result != 0)
-			OutputDebugString("failed waveOutUnprepareHeader.");
-		result = waveOutPrepareHeader(hwo, &header, sizeof(header));
-		if (result != 0)
-			OutputDebugString("failed waveOutPrepareHeader.");
-		result = waveOutWrite(hwo, &header, sizeof(header));
-		if (result != 0)
-			OutputDebugString("failed waveOutWrite.");
+		while(param->bufferWIndex - param->bufferRIndex < WaveOutParam::Buffers)
+			writePcm();
 	}
-
-
 }
 
 void CMml2WavDlg::OnBnClickedBtnWaveTest()
@@ -520,53 +501,103 @@ void CMml2WavDlg::play(bool isCheckWave)
 	OnBnClickedBtn();
 
 	WavData data;
-	if (!genWavData(data, isCheckWave))
+	GeneratorWrapper* gen = genWavReady(data, isCheckWave);
+	if (!gen)
 		return;
-
+	gen->setLoop(chkLoop_.GetCheck() != 0);
+	//assert(playing_ == nullptr);
 	auto playParam = new WaveOutParam();
 	playParam->hWaveOut_ = nullptr;
-	playParam->pcmBuffer_.clear();
-	playParam->pcmBuffer_.insert(playParam->pcmBuffer_.end(), data.data.begin(), data.data.end());
-	playParam->loopPlay_ = chkLoop_.GetCheck() != 0;
+	playParam->loopPlay_ = 0;
+	playParam->generator_ = gen;
+	playParam->bufferWIndex = 0;
+	playParam->bufferRIndex = 0;
+	playing_ = (playParam);
+
 
 	auto result =  waveOutOpen(
 		&playParam->hWaveOut_,
 		-1,
 		&data.format,
-		(DWORD_PTR)waveOutCallbackProc,
-		(DWORD_PTR)playParam,
+		(DWORD_PTR)::waveOutCallbackProc,
+		(DWORD_PTR)this,
 		CALLBACK_FUNCTION
 	);
+
 	if (result != 0)
 	{
 		MessageBox("Wav出力デバイスのオープンに失敗しました");
 		return;
 	}
-	playParam->playOffsetSamples_ =  chkFromCurrent_.GetCheck() !=0 ? data.startSample : 0;
 
 
-	WAVEHDR& header = playParam->nowHeader;
+	while (playParam->bufferWIndex - playParam->bufferRIndex < WaveOutParam::Buffers)
+		writePcm();
+
+}
+#if 0
+void CMml2WavDlg::preparePcm(bool isZero)
+{
+	auto param = (WaveOutParam*)playing_;
+	int writeIdx = param->bufferPIndex % WaveOutParam::Buffers;
+	WAVEHDR& header = param->nowHeader[writeIdx];
 	memset(&header, 0, sizeof(header));
-	auto offsets = playParam->playOffsetSamples_ * 2;
-	header.lpData = (char*)playParam->pcmBuffer_.data() + (offsets * sizeof(int16_t));
-	header.dwBufferLength = (DWORD)((playParam->pcmBuffer_.size() - offsets) * sizeof(int16_t));
-	header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
-	header.dwLoops = 1;
+	header.lpData = (char*)param->pcmBuffer_[writeIdx];
+	header.dwFlags = writeIdx == 0 ? WHDR_BEGINLOOP : 0;
+	header.dwFlags = 0;// |= writeIdx == WaveOutParam::Buffers - 1 ? WHDR_ENDLOOP : 0;
+	header.dwLoops = 0;
 
-	result = waveOutPrepareHeader(playParam->hWaveOut_, &header, sizeof(header));
+	if (isZero)
+	{
+		header.dwBufferLength = 0;
+		param->pcmBuffer_[writeIdx][0] = 0;
+	}
+	else
+	{
+		header.dwBufferLength = StreamingBuffurSize;
+		auto genPcm = param->generator_->generate<2, int16_t>(StreamingBuffurSize / 2 / sizeof(int16_t));
+		memcpy(header.lpData, genPcm.data(), (std::min)(genPcm.size() * sizeof(int16_t), StreamingBuffurSize));
+	}
+
+	param->bufferPIndex++;
+}
+#endif
+
+void CMml2WavDlg::writePcm(bool isZero)
+{
+	auto param = (WaveOutParam*)playing_;
+	int writeIdx = param->bufferWIndex % WaveOutParam::Buffers;
+	WAVEHDR& header = param->nowHeader[writeIdx];
+	memset(&header, 0, sizeof(header));
+	header.lpData = (char*)param->pcmBuffer_[writeIdx];
+	header.dwLoops = 0;
+
+	param->bufferWIndex++;
+
+	header.dwBufferLength = StreamingBuffurSize;
+	if (isZero)
+	{
+		memset(param->pcmBuffer_[writeIdx], 0, sizeof(param->pcmBuffer_[writeIdx]));
+	}
+	else
+	{
+		auto genPcm = param->generator_->generate<2, int16_t>(StreamingBuffurSize / 2 / sizeof(int16_t));
+		memcpy(header.lpData, genPcm.data(), (std::min)(genPcm.size() * sizeof(int16_t), StreamingBuffurSize));
+	}
+	auto result = waveOutPrepareHeader(param->hWaveOut_, &header, sizeof(header));
 	if (result != 0)
 		OutputDebugString("failed waveOutPrepareHeader.");
 	
-	result = waveOutWrite(playParam->hWaveOut_, &header, sizeof(header));
+	result = waveOutWrite(param->hWaveOut_, &header, sizeof(header));
 	if (result != 0)
 		OutputDebugString("failed waveOutWrite.");
 
-	playing_.push_back(playParam);
-}
 
+}
 
 void CMml2WavDlg::OnAccPlay()
 {
+	OnBnClickedBtn();
 	play(false);
 }
 
@@ -578,26 +609,28 @@ void CMml2WavDlg::OnAccStop()
 
 void CMml2WavDlg::OnBnClickedBtn()
 {
-	for (auto param : playing_)
+	auto param = (WaveOutParam*)playing_;
+	if(param)
 	{
 		if (param->hWaveOut_)
 		{
 			param->loopPlay_ = 0;
-			waveOutReset(param->hWaveOut_);
-			waveOutUnprepareHeader(param->hWaveOut_, &param->nowHeader, sizeof(param->nowHeader));
-			waveOutClose(param->hWaveOut_);
+			param->exitPlay_ = true;
+			while (param->bufferRIndex != param->bufferWIndex)
+				Sleep(100);
+			auto result = waveOutPause(param->hWaveOut_);
+			result = waveOutClose(param->hWaveOut_);
+			if (result != 0)
+				OutputDebugString("failed waveOutClose.");
 		}
 	}
 
-	while (playing_.size() > 0)
+	while (playing_!=nullptr)
 	{
-		if (playing_[0]->hWaveOut_ == NULL)
+		if (playing_->hWaveOut_ == NULL)
 		{
-			playing_.erase(playing_.begin());
-		}
-		else
-		{
-			Sleep(100);
+			playing_ = nullptr;
+
 		}
 	}
 }
@@ -648,7 +681,8 @@ void CMml2WavDlg::OnEnChangeTxtDutySwitchTiming()
 void CMml2WavDlg::OnBnClickedBtnOutput()
 {
 	WavData data;
-	if (!genWavData(data))
+	GeneratorWrapper* gen = genWavReady(data);
+	if (!gen)
 		return;
 
 	CFileDialog dlg(FALSE, "wav", "output.wav", 6, "Wave File(*.wav)|*.wav||");
@@ -678,12 +712,19 @@ void CMml2WavDlg::OnBnClickedBtnOutput()
 		uint16_t bits;
 		uint32_t dataChunk;
 		uint32_t dataChunkSize;
-
-
 	};
+	std::vector<int16_t> pcm;
+	gen->setLoop(false);
+	gen->setDisableInfinityLoop(true);
+	while (!gen->isPlayEnd())
+	{
+		auto generated = gen->generate<2, int16_t>(1);
+		pcm.insert(pcm.end(), generated.begin(), generated.end());
+	}
+
 	WAVE_FILE_HEADER header;
 	header.riff = CHUNK("RIFF");
-	header.riffSize = uint32_t(sizeof(header) + data.data.size()* sizeof(decltype(data.data)::value_type) - 8);
+	header.riffSize = uint32_t(sizeof(header) + pcm.size() * sizeof(int16_t) - 8);
 	header.format = CHUNK("WAVE");
 	header.fmtChunk = CHUNK("fmt ");
 	header.fmtChunkSize = 16;
@@ -694,10 +735,10 @@ void CMml2WavDlg::OnBnClickedBtnOutput()
 	header.blockSize = data.format.nBlockAlign;
 	header.bits = data.format.wBitsPerSample;
 	header.dataChunk = CHUNK("data");
-	header.dataChunkSize = uint32_t(data.data.size() * sizeof(decltype(data.data)::value_type));
+	header.dataChunkSize = uint32_t(pcm.size() * sizeof(int16_t));
 
 	fwrite(&header, sizeof(header), 1, fp);
-	fwrite(data.data.data(), sizeof(decltype(data.data)::value_type), data.data.size(), fp);
+	fwrite(pcm.data(), sizeof(int16_t), pcm.size(), fp);
 	fclose(fp);
 
 }

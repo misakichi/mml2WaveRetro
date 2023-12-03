@@ -35,7 +35,7 @@ namespace MmlUtility
 		IlieagalLoopCommandInTuplet,		
 		IlieagalLoopEndNotLoop,
 		LoopNestOver,
-		NotSupportInfinityLoop,
+		InvalidLoopNums,
 		
 		IliegalLfoType,
 		IllegalFormatLfoCommand,//エンベロープコマンドの書式が間違っている
@@ -48,6 +48,8 @@ namespace MmlUtility
 		CanNotEndMacroInLoop,
 		CanNotCallMacroInTuple,
 		IliegalMacroCharacter,
+		CurrentPositionAfterInfinityLoop,
+		NotFountToneLoop,
 	};
 
 	constexpr int LfoSettingParams = 6;
@@ -105,6 +107,7 @@ namespace MmlUtility
 		}
 
 		enum class ECommand : int {
+			NOP=-1,
 			ToneNote,		//cdefgab
 			Tempo,			//T
 			Volume,			//V
@@ -182,6 +185,13 @@ namespace MmlUtility
 		ECommand command;
 		int isCurrent;
 	};
+
+	template<unsigned Channels, typename Type>
+	struct Sample
+	{
+		Type	sample[Channels];
+	};
+
 	//#define USE_CALCED_SIN_TABLE
 	template<typename CalcT = CFixFloat<int64_t, 16>>
 	class WavGenerator
@@ -201,10 +211,18 @@ namespace MmlUtility
 		inline void addCommand(const TypedCommand& command);
 		inline void addCommand(std::vector<TypedCommand> commands);
 		inline void setTone(int no, const ToneData& tone);
-		inline bool ready(uint32_t sampleRate);
+		inline bool ready(uint32_t sampleRate, bool loopPlay=false);
 
-		template<int Channels>
-		inline std::vector<int16_t> generate(size_t* currentOffset=nullptr);
+		template<unsigned Channels, typename Type>
+		inline std::vector<Type> generateSamples(unsigned samples);
+
+		template<unsigned Channels, typename Type>
+		Sample<Channels, Type> generate(bool* isCurrent=nullptr);
+
+		void setLoop(bool isLoop) { loopPlay_ = isLoop; }
+		void setDisableInfinityLoop(bool disableInfinityLoop) { disableInfinityLoop_ = disableInfinityLoop; }
+		bool isPlayEnd() const { return loopPlay_ == false && status_.commandIdx >= commands_.size(); }
+
 	private:
 #ifdef USE_CALCED_SIN_TABLE
 		static constexpr int SinTableResolution = 100;
@@ -302,6 +320,8 @@ namespace MmlUtility
 		};
 		PlayStatus status_;
 		uint32_t sampleRate_;
+		bool loopPlay_ = false;
+		bool disableInfinityLoop_ = false;
 		uint32_t volumeMax_ = 255; //Max of "V" command value
 
 		BiQuadLpf<CalcType> lpf_;
@@ -309,21 +329,44 @@ namespace MmlUtility
 
 	struct GenerateMmlToPcmResult
 	{
-		ErrorReson result;
-		size_t errBank;
-		size_t errPos;
-		std::vector<int16_t> pcm;
+		ErrorReson result = ErrorReson::NoError;
+		size_t errBank = 0;
+		size_t errPos = 0;
+		::std::vector<int16_t> pcm;
 		size_t pcmStartOffset;
 	};
 
-	template<unsigned Channels, typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
+	template<typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
 	class MultiBankMml 
 	{
 	public:
+		inline GenerateMmlToPcmResult compile(const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank = 0, size_t currentCursor = 0);
+		inline void skipToCurrent();		
+		template<unsigned Channel, typename Type> inline std::vector<Type> generate(int samples);
+		void setLoop(bool loop) {
+			for (auto& bank : bank_)
+				bank.setLoop(loop);
+		}
+		void setDisableInfinityLoop(bool disableInfinityLoop)
+		{
+			for (auto& bank : bank_)
+				bank.setDisableInfinityLoop(disableInfinityLoop);
+		}
+
+		bool isPlayEnd() const {
+			bool ret = true;
+			for (int i = 0; i < Banks; i++)
+			{
+				ret &= bank_[i].isPlayEnd();
+			}
+			return ret;
+		}
 
 	private:
 		WavGenerator<CalcT> bank_[Banks];
-
+		bool compiled_ = false;
+		size_t currentBank_;
+		size_t currentCursor_;
 	};
 
 	template<unsigned Channels, typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
