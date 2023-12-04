@@ -1547,9 +1547,9 @@ REPROC2:
 	{
 		//sample = (CalcType(0.7f) + (CalcType(rand()) / RAND_MAX) * 3/ 10) * sample;
 		//L
-		result.sample[0] = setFunc(level);
+		result.sample[0] = setFunc(level * (256 - status_.pan) / 256);
 		//R
-		result.sample[1] = setFunc(level);
+		result.sample[1] = setFunc(level * (status_.pan) / 256);
 	}
 
 	status_.waveDiv2InSample += 1;
