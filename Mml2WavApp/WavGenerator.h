@@ -1,4 +1,16 @@
 #pragma once
+#ifndef _WAV_GENERATOR_H
+#define _WAV_GENERATOR_H
+
+//
+//  WavGenerator.h
+//
+//  Copyright (c) 2023 misakichi kaminagare.
+//
+//  Distributed under the Boost Software License, Version 1.0.
+//  See accompanying file "LICENSE" or copy at
+//  http://www.boost.org/LICENSE_1_0.txt
+//
 
 #include <string>
 #include <vector>
@@ -374,3 +386,5 @@ namespace MmlUtility
 
 #include "WavGenerator.inl"
 }
+
+#endif
