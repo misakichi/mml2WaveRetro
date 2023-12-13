@@ -2,6 +2,7 @@
 //  WavGenerator.inl
 //
 //  Copyright (c) 2023 misakichi kaminagare.
+//  https://github.com/misakichi/mml2WaveRetro
 //
 //  Distributed under the Boost Software License, Version 1.0.
 //  See accompanying file "LICENSE" or copy at
