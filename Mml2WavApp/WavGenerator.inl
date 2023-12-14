@@ -243,7 +243,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		bool isFloatPoint = false;
 		char num[32] = {};
 		auto dst = num;
-		while (*p >= '0' && *p <= '9' || (*p=='.' && !isFloatPoint))
+		while ((*p >= '0' && *p <= '9') || (*p=='.' && !isFloatPoint))
 		{
 			isFloatPoint |= *p == '.';
 			*dst++ = *p++;
@@ -962,27 +962,29 @@ inline void MmlUtility::WavGenerator<CalcT>::addCommand(std::vector<TypedCommand
 	commands_.insert(commands_.end(), commands.begin(), commands.end());
 }
 
-template<typename T>
-static T mod(const T& x, const T& y)
+namespace MmlMath
 {
-	return x % y;
+	template<typename T>
+	inline T mod(const T& x, const T& y)
+	{
+		return x % y;
+	}
+	template<>
+	inline float mod<float>(const float& x, const float& y)
+	{
+		return fmodf(x, y);
+	}
+	template<>
+	inline double mod<double>(const double& x, const double& y)
+	{
+		return fmodf(x, y);
+	}
+	template<typename T>
+	inline T Lerp(T a, T b, T ratio)
+	{
+		return a * (T(1) - ratio) + b * ratio;
+	}
 }
-template<>
-static float mod<float>(const float& x, const float& y)
-{
-	return fmodf(x,y);
-}
-template<>
-static double mod<double>(const double& x, const double& y)
-{
-	return fmodf(x, y);
-}
-template<typename T>
-static T Lerp(T a, T b, T ratio)
-{
-	return a * (T(1) - ratio) + b * ratio;
-};
-
 
 template<typename CalcT>
 void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::WavGenerator<CalcT>::PlayStatus* playStatus, int sampleRate)
@@ -1008,7 +1010,7 @@ void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::
 	//次の設定に行けるかチェック
 	if (settingIndex < lfoParams->settings-1)
 	{
-		const MmlCommand<CalcType>::LFO::Setting* nextSetting = &lfoParams->setting[settingIndex + 1];
+		const typename MmlCommand<CalcType>::LFO::Setting* nextSetting = &lfoParams->setting[settingIndex + 1];
 		if (CalcType(nextSetting->start) <= curPoint)
 		{
 			settingIndex++;
@@ -1026,7 +1028,7 @@ void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::
 		if (pNext->lerp == 1)
 		{
 			nextFreq = pNext->cycleMsec * sampleRate / 1000.0f;
-			percent = Lerp(0.0f, pNext->percent, (float)ratio);
+			percent = MmlMath::Lerp(0.0f, pNext->percent, (float)ratio);
 		}
 		else {
 			return;
@@ -1036,8 +1038,8 @@ void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::
 	else if (settingIndex < lfoParams->settings - 1 && pNext->lerp!=0)
 	{
 		auto ratio = (curPoint - pCur->start) / (pNext->start - pCur->start);
-		nextFreq = Lerp(pCur->cycleMsec, pNext->cycleMsec, (float)ratio) * sampleRate / 1000.0f;
-		percent = Lerp(pCur->percent, pNext->percent, (float)ratio);
+		nextFreq = MmlMath::Lerp(pCur->cycleMsec, pNext->cycleMsec, (float)ratio) * sampleRate / 1000.0f;
+		percent = MmlMath::Lerp(pCur->percent, pNext->percent, (float)ratio);
 	}
 	else
 	{
@@ -1062,7 +1064,7 @@ inline std::vector<Type> MmlUtility::WavGenerator<CalcT>::generateSamples(unsign
 	Type* dst = result.begin();
 	while (samples--)
 	{
-		auto one = generateSample();
+		auto one = generate();
 		*dst++ = one.sample[0];
 		if constexpr (Channels == 2)
 			*dst++ = one.sample[1];
@@ -1366,14 +1368,14 @@ REPROC2:
 				if (crossSamples >= restSample)
 				{
 					auto ratio = restSample / crossSamples;
-					baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
+					baseFreqSamples = MmlMath::Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
 				}
 			}
 
 			//LFOによる変動
 			if (status_.lfoTone.percent != 0)
 			{
-				auto t = mod(CalcType(status_.lfoTone.sampleProgress), status_.lfoTone.freqSample);
+				auto t = MmlMath::mod(CalcType(status_.lfoTone.sampleProgress), status_.lfoTone.freqSample);
 				t /= status_.lfoTone.freqSample;
 #ifdef USE_CALCED_SIN_TABLE
 				t *= CalcType(360);
@@ -1486,7 +1488,7 @@ REPROC2:
 			{
 				auto duty = status_.duty;
 				auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;
-				auto noiseFreq = Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
+				auto noiseFreq = MmlMath::Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
 				level = lpf_.lpf(noise, noiseFreq, sampleRate_);
 				//level /= noiseFreq / (CalcType(sampleRate_) / 2 - 200);
 				//level = Lerp(noise, filteredNoise, duty / 100);
@@ -1511,7 +1513,7 @@ REPROC2:
 			if (status_.isSlurFrom == 0)
 			{
 				auto ratio = (fNowSample - envelope.envelopeAtackSamples) / envelope.envelopeDecaySamples;
-				adsr = Lerp(envelope.envelopeAtackLevel, envelope.envelopeSustainLevel, ratio);
+				adsr = MmlMath::Lerp(envelope.envelopeAtackLevel, envelope.envelopeSustainLevel, ratio);
 			}
 		}
 		else if (restSample < envelope.envelopeReleaseSamples)
@@ -1532,7 +1534,7 @@ REPROC2:
 		//ボリュームLFO
 		if (status_.lfoVolume.percent != 0)
 		{
-			auto t = mod(CalcType(status_.lfoVolume.sampleProgress), status_.lfoVolume.freqSample);
+			auto t = MmlMath::mod(CalcType(status_.lfoVolume.sampleProgress), status_.lfoVolume.freqSample);
 			t /= status_.lfoVolume.freqSample;
 #ifdef USE_CALCED_SIN_TABLE
 			t *= CalcType(360);
@@ -1568,9 +1570,9 @@ REPROC2:
 
 
 	if (status_.lfoTone.freqSample != 0)
-		status_.lfoTone.sampleProgress = mod(status_.lfoTone.sampleProgress + 1, status_.lfoTone.freqSample);
+		status_.lfoTone.sampleProgress = MmlMath::mod(status_.lfoTone.sampleProgress + 1, status_.lfoTone.freqSample);
 	if (status_.lfoVolume.freqSample != 0)
-		status_.lfoVolume.sampleProgress = mod(status_.lfoVolume.sampleProgress + 1, status_.lfoVolume.freqSample);
+		status_.lfoVolume.sampleProgress = MmlMath::mod(status_.lfoVolume.sampleProgress + 1, status_.lfoVolume.freqSample);
 
 	if (status_.noteProcedSamples == status_.noteSamples)
 		status_.commandIdx++;
@@ -1637,7 +1639,7 @@ MmlUtility::GenerateMmlToPcmResult MmlUtility::MultiBankMml<CalcT,Banks>::compil
 	for (int i = 0; i < Banks; i++)
 	{
 		auto& generator = bank_[i];
-		std::vector<WavGenerator<CalcT>::TypedCommand> commands;
+		std::vector<typename WavGenerator<CalcT>::TypedCommand> commands;
 		std::string mml = defaultSetting;
 		auto defaultSize = mml.length();
 		mml += prepareSharedMml;
@@ -1709,7 +1711,7 @@ void MmlUtility::MultiBankMml<CalcT, Banks>::skipToCurrent()
 		while (!isCurrent)
 		{
 			
-			bank_[currentBank_].generate<1,int16_t>(&isCurrent);
+			bank_[currentBank_].template generate<1,int16_t>(&isCurrent);
 			offset++;
 		}
 
@@ -1720,7 +1722,7 @@ void MmlUtility::MultiBankMml<CalcT, Banks>::skipToCurrent()
 				continue;
 			auto skipSamples = offset;
 			while (skipSamples--)
-				bank_[i].generate<1, int16_t>();
+				bank_[i].template generate<1, int16_t>();
 		}
 	}
 }
@@ -1739,7 +1741,7 @@ inline std::vector<Type> MmlUtility::MultiBankMml<CalcT, Banks>::generate(int sa
 		auto num = samples;
 		while (num--)
 		{
-			auto one = bank_[i].generate<Channel, Type>();
+			auto one = bank_[i].template generate<Channel, Type>();
 			*it++ += one.sample[0];
 			if constexpr (Channel==2)
 				*it++ += one.sample[1];
@@ -1749,7 +1751,7 @@ inline std::vector<Type> MmlUtility::MultiBankMml<CalcT, Banks>::generate(int sa
 }
 
 template<unsigned Channels, typename CalcT, int Banks>
-bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
+inline bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
 {
 	MultiBankMml<CalcT, Banks> generator;
 	auto result = generator.compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);

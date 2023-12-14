@@ -51,10 +51,10 @@ CMml2WavApp theApp;
 
 BOOL CMml2WavApp::InitInstance()
 {
-	CFixFloat<int> flt32(0.5);
-	auto tmp = flt32 * 0.5;
-	float ftmp = tmp;
-	double dtmp = tmp;
+	//CFixFloat<int> flt32(0.5);
+	//auto tmp = flt32 * 0.5;
+	//float ftmp = tmp;
+	//double dtmp = tmp;
 
 
 	// アプリケーション マニフェストが visual スタイルを有効にするために、

@@ -31,7 +31,7 @@ public:
 #endif
 
 	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);	// DDX/DDV サポート
+	void DoDataExchange(CDataExchange* pDX) override;	// DDX/DDV サポート
 
 
 	enum { BANKS = 5 };
@@ -156,7 +156,7 @@ protected:
 	HICON m_hIcon;
 
 	// 生成された、メッセージ割り当て関数
-	virtual BOOL OnInitDialog();
+	BOOL OnInitDialog() override;
 	afx_msg void OnSysCommand(UINT nID, LPARAM lParam);
 	afx_msg void OnPaint();
 	afx_msg HCURSOR OnQueryDragIcon();
@@ -216,7 +216,7 @@ private:
 	afx_msg void OnCmdOpenFile();
 	afx_msg void OnCmdSaveAsFile();
 	afx_msg void OnCmdSaveFile();
-	virtual BOOL PreTranslateMessage(MSG* pMsg);
+	BOOL PreTranslateMessage(MSG* pMsg) override;
 
 	void RefreshDutyList();
 	void SetEnvelopeTemplate(int no);

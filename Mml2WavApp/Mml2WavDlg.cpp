@@ -752,7 +752,8 @@ void CMml2WavDlg::OnBnClickedBtnOutput()
 void CMml2WavDlg::setWindowText()
 {
 	CString title;
-	title.Format("mml2wav Retro - %s %s", filePath_ == "" ? "無題" : filePath_, isDirty_ ? "*" : "");
+	CString titleStr = filePath_.IsEmpty() ? "無題" : filePath_;
+	title.Format("mml2wav Retro - %s %s", (const char*)titleStr, isDirty_ ? "*" : "");
 	SetWindowText(title);
 
 }

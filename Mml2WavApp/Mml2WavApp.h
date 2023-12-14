@@ -28,7 +28,7 @@ public:
 
 // オーバーライド
 public:
-	virtual BOOL InitInstance();
+	BOOL InitInstance() override;
 
 // 実装
 
