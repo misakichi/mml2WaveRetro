@@ -503,22 +503,18 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				}
 				len = CalcType(NoteLengthResolutio) / iLen;
 			}
-			if (*p == '.')
+			
+			auto oLen = len;
+			auto addShift = 1;
+			while (*p == '.')
 			{
 				if (tupletIndex >= 0)
 				{
 					return genError(ErrorReson::IliegalCommandInTuplet);
 				}
-				p++;
-				if (*p == '.')
-				{
-					p++;
-					len = len + len / 2 + len / 4;
-				}
-				else
-				{
-					len = len + len / 2;
-				}
+				len += oLen / (1<<addShift);
+				++addShift;
+				++p;
 			}
 
 			if (slurFromCmdIndex != -1)
@@ -575,19 +571,19 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				return genError(ErrorReson::IllegalValueLength);
 			state.len = CalcType(NoteLengthResolutio) / state.len;
 
-			if (*p == '.')
+			auto oLen = state.len;
+			auto addShift = 1;
+			while (*p == '.')
 			{
-				p++;
-				if (*p == '.')
+				if (tupletIndex >= 0)
 				{
-					p++;
-					state.len = state.len + state.len/2 + state.len/4;
+					return genError(ErrorReson::IliegalCommandInTuplet);
 				}
-				else
-				{
-					state.len = state.len + state.len /2;
-				}
+				state.len += oLen / (1 << addShift);
+				++addShift;
+				++p;
 			}
+
 
 		}
 		else if (slurFromCmdIndex != -1)
@@ -1300,7 +1296,7 @@ TOP:
 		//bpm=1•ªŠÔ‚ÌŽl•ª‰¹•„”
 		//length=•ª‰ð”\’PˆÊ‚Ì’·‚³
 		//bpm * 4 / length 
-		lengthInfo.samples = CalcType(sampleRate_) * 60 * 4 * lengthInfo.length / NoteLengthResolutio / lengthInfo.bpm;
+		lengthInfo.samples = uint64_t(CalcType(sampleRate_) * 60 * 4 / NoteLengthResolutio / lengthInfo.bpm * lengthInfo.length);
 
 		for (auto& li : status_.recentLength)
 			samples += li.samples;
