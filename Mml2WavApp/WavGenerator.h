@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <array>
 #include "FixFloat.h"
 
 namespace MmlUtility
@@ -210,7 +211,7 @@ namespace MmlUtility
 	class WavGenerator
 	{
 	public:
-		enum { ToneMax = 32 };
+		static constexpr int ToneMax = 32;
 		using CalcType = CalcT;
 		using TypedCommand = MmlCommand<CalcType>;
 		WavGenerator();
@@ -230,11 +231,12 @@ namespace MmlUtility
 		inline std::vector<Type> generateSamples(unsigned samples);
 
 		template<unsigned Channels, typename Type>
-		Sample<Channels, Type> generate(bool* isCurrent=nullptr);
+		Sample<Channels, Type> generate(bool* isCurrent=nullptr, bool loopWait = false);
 
 		void setLoop(bool isLoop) { loopPlay_ = isLoop; }
 		void setDisableInfinityLoop(bool disableInfinityLoop) { disableInfinityLoop_ = disableInfinityLoop; }
-		bool isPlayEnd() const { return loopPlay_ == false && status_.commandIdx >= commands_.size(); }
+		bool isPlayEnd() const { return loopPlay_ == false && isEndCommand(); }
+		bool isEndCommand() const { return status_.commandIdx >= commands_.size(); }
 
 	private:
 #ifdef USE_CALCED_SIN_TABLE
@@ -353,9 +355,10 @@ namespace MmlUtility
 	class MultiBankMml 
 	{
 	public:
+		using CalcType = CalcT;
 		inline GenerateMmlToPcmResult compile(const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank = 0, size_t currentCursor = 0);
 		inline void skipToCurrent();		
-		template<unsigned Channel, typename Type> inline std::vector<Type> generate(int samples);
+		template<unsigned Channel, typename Type> inline typename std::vector<Type> generate(int samples);
 		void setLoop(bool loop) {
 			for (auto& bank : bank_)
 				bank.setLoop(loop);

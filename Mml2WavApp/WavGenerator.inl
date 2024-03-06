@@ -331,7 +331,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			if (LoopNestMax <= loopIndex)
 				return genError(ErrorReson::LoopNestOver);
 
-			loopStartIndex[loopIndex] = addCommands->size();
+			loopStartIndex[loopIndex] = (int)addCommands->size();
 
 			TypedCommand cmd;
 			cmd.command = TypedCommand::ECommand::Loop;
@@ -362,7 +362,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmd.loop.id = loopIndex;
 			auto loopStart = loopStartIndex[loopIndex];
 			cmd.loop.pairIndex = loopStart;
-			(*addCommands)[loopStart].loop.pairIndex = addCommands->size();
+			(*addCommands)[loopStart].loop.pairIndex = (int)addCommands->size();
 			(*addCommands)[loopStart].loop.num = loops;
 
 			bool hasTone = false;
@@ -375,7 +375,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				return genError(ErrorReson::NotFountToneLoop);
 
 
-			if (current!=SIZE_T_MAX)
+			if (current!=SIZE_MAX)
 			{
 				return genError(ErrorReson::CurrentPositionAfterInfinityLoop);
 			}
@@ -566,10 +566,10 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		else if (c == 'L')
 		{
 			NUM_CHECK(*p);
-			state.len = getNumI();
-			if (state.len == 0)
+			auto ilen = getNumI();
+			if (ilen == 0)
 				return genError(ErrorReson::IllegalValueLength);
-			state.len = CalcType(NoteLengthResolutio) / state.len;
+			state.len = CalcType(NoteLengthResolutio) / ilen;
 
 			auto oLen = state.len;
 			auto addShift = 1;
@@ -583,7 +583,6 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				++addShift;
 				++p;
 			}
-
 
 		}
 		else if (slurFromCmdIndex != -1)
@@ -649,7 +648,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				{
 					TypedCommand& icmd = (*addCommands)[i];
 					if(icmd.command == TypedCommand::ECommand::Loop)
-						icmd.loop.pairIndex += currentLast;
+						icmd.loop.pairIndex += (int)currentLast;
 				}
 			}
 		}
@@ -728,7 +727,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				while (settings < LfoSettingParams)
 				{
 					NUM_CHECK(*p);
-					cmdLfo.lfo.setting[settings].start = getNumF();
+					cmdLfo.lfo.setting[settings].start = (float)getNumF();
 					cmdLfo.lfo.setting[settings].lerp = 1;
 					if (*p == 'S')
 					{
@@ -749,11 +748,11 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 					preStart = cmdLfo.lfo.setting[settings].start;
 
 					NUM_CHECK(*p);
-					cmdLfo.lfo.setting[settings].cycleMsec = getNumF();
+					cmdLfo.lfo.setting[settings].cycleMsec = (float)getNumF();
 					if (*p++ != ':')
 						return genError(ErrorReson::IllegalFormatLfoCommand);
 					NUM_CHECK(*p);
-					cmdLfo.lfo.setting[settings].percent = getNumF() / 100.0;
+					cmdLfo.lfo.setting[settings].percent = (float)getNumF() / 100.0f;
 					++settings;
 					if (*p != ':')
 					{
@@ -842,27 +841,27 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				{
 					++p;
 					NUM_CHECK(*p);
-					cmdType.wave.random = getNumF();
+					cmdType.wave.random = (float)getNumF();
 				}
 				if (*p == 'N')
 				{
 					++p;
 					NUM_CHECK(*p);
-					cmdType.wave.levelNoise = getNumF();
+					cmdType.wave.levelNoise = (float)getNumF();
 				}
 				cmdType.wave.cycle = 0;
 				if (*p == 'C')
 				{
 					++p;
 					NUM_CHECK(*p);
-					cmdType.wave.cycle = getNumF();
+					cmdType.wave.cycle = (float)getNumF();
 				}
 				int duties = 0;
 				while (*p == ':')
 				{
 					++p;
 					NUM_CHECK(*p);
-					cmdType.wave.duty[duties] = getNumF();
+					cmdType.wave.duty[duties] = (float)getNumF();
 					if (++duties == decltype(cmdType.wave)::MaxDuties)
 						return genError(ErrorReson::WaveDefineOverDuties);
 				}
@@ -879,10 +878,10 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			return genError(ErrorReson::UnknownCommand);
 		}
 
-		auto offset = p - mml;
+		auto offset = (size_t)(std::max)((int64_t)0, (int64_t)(p - mml));
 		if (addCommands->size()>0 && current < offset)
 		{
-			current = SIZE_T_MAX;
+			current = SIZE_MAX;
 			addCommands->back().isCurrent = 1;
 		}
 	}
@@ -907,7 +906,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		}
 	}
 
-	if (current != SIZE_T_MAX)
+	if (current != SIZE_MAX)
 	{
 		TypedCommand cmdType;
 		cmdType.command = TypedCommand::ECommand::NOP;
@@ -1089,7 +1088,7 @@ public:
 	template<typename CalcT>
 	int16_t operator()(CalcT v)
 	{
-		return (std::max)(SHORT_MIN, (std::min)(SHORT_MAX, (int)(v * SHORT_MAX)));
+		return (std::max)(INT16_MIN, (std::min)((int)INT16_MAX, (int)(v * INT16_MAX)));
 	}
 };
 template<>
@@ -1104,7 +1103,7 @@ public:
 };
 template<typename CalcT>
 template<unsigned Channels, typename Type>
-MmlUtility::Sample<Channels, Type> MmlUtility::WavGenerator<CalcT>::generate(bool* isCurrent)
+MmlUtility::Sample<Channels, Type> MmlUtility::WavGenerator<CalcT>::generate(bool* isCurrent, bool loopWait)
 {
 	auto Abs = [](auto v)
 	{
@@ -1119,13 +1118,18 @@ MmlUtility::Sample<Channels, Type> MmlUtility::WavGenerator<CalcT>::generate(boo
 	SetTypeValue<Type> setFunc;
 
 	static_assert(Channels == 1 || Channels == 2);
-	Sample<Channels, int16_t> result = {};
+	Sample<Channels, Type> result = {};
 
 TOP:
+	if (commands_.size() == 0)
+		return {};
+
 	if (status_.commandIdx >= commands_.size())
 	{
 		if (loopPlay_)
 		{
+			if (loopWait)
+				return {};
 			status_.commandIdx = 0;
 		}
 		else
@@ -1258,7 +1262,7 @@ TOP:
 		//ランダム周波数時は次の半分の周波数を決定
 		if (tone->randomRange != 0)
 		{
-			auto random = (CalcType(100) - CalcType(tone->randomRange)) + (CalcType(rand()) / RAND_MAX) * (CalcType(tone->randomRange) * 2);
+			auto random = (CalcType(100) - CalcType(tone->randomRange)) + (CalcType(rand()) / CalcType(RAND_MAX)) * (CalcType(tone->randomRange) * 2);
 			auto freq = baseFreqSamples * random / 200;
 			status_.waveFreqDiv2 = freq;
 
@@ -1483,7 +1487,7 @@ REPROC2:
 		case EWaveCurveType::Noise:
 			{
 				auto duty = status_.duty;
-				auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;
+				auto noise = (CalcType(rand()) / CalcType(RAND_MAX) - CalcType(0.5)) * 2;
 				auto noiseFreq = MmlMath::Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
 				level = lpf_.lpf(noise, noiseFreq, sampleRate_);
 				//level /= noiseFreq / (CalcType(sampleRate_) / 2 - 200);
@@ -1524,7 +1528,7 @@ REPROC2:
 		//ボリュームノイズ
 		if (tone->levelNoise != 0)
 		{
-			auto modify = CalcType(1.0) - (CalcType(rand()) / RAND_MAX * tone->levelNoise / 100);
+			auto modify = CalcType(1.0) - (CalcType(rand()) / CalcType(RAND_MAX) * tone->levelNoise / 100);
 			level *= modify;
 		}
 		//ボリュームLFO
@@ -1724,25 +1728,36 @@ void MmlUtility::MultiBankMml<CalcT, Banks>::skipToCurrent()
 }
 
 template<typename CalcT, int Banks>
-template<unsigned Channel, typename Type>
+template<unsigned Channels, typename Type>
 inline std::vector<Type> MmlUtility::MultiBankMml<CalcT, Banks>::generate(int samples)
 {
-	static_assert(Channel == 1 || Channel == 2);
+	if (samples <= 0)
+		return std::vector<Type>();
+	static_assert(Channels == 1 || Channels == 2);
 	
 	std::vector<Type> result;
-	result.resize(samples* Channel);
-	for (int i = 0; i < Banks; i++)
+	result.resize(samples * Channels);
+	auto it = result.begin();
+	auto end = result.end();
+	do
 	{
-		auto it = result.begin();
-		auto num = samples;
-		while (num--)
+		bool loopOk = true;
+		for (int i = 0; i < Banks; i++)
+			loopOk &= bank_[i].isEndCommand();
+
+		Sample<Channels, Type> sample = {};
+		for (int i = 0; i < Banks; i++)
 		{
-			auto one = bank_[i].template generate<Channel, Type>();
-			*it++ += one.sample[0];
-			if constexpr (Channel==2)
-				*it++ += one.sample[1];
+			auto one = bank_[i].template generate<Channels, Type>(nullptr, !loopOk);
+
+			sample.sample[0] += one.sample[0];
+			if constexpr (Channels == 2)
+				sample.sample[1] += one.sample[1];
 		}
-	}
+		*it++ = sample.sample[0];
+		if constexpr (Channels == 2)
+			*it++ = sample.sample[1];
+	} while (it != end);
 	return result;
 }
 
