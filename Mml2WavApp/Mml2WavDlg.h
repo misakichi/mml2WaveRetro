@@ -89,6 +89,29 @@ public:
 				return generator2_->generate<Channel, Type>(samples);
 			if (generator3_)
 				return generator3_->generate<Channel, Type>(samples);
+			
+			return {};
+		}
+		inline size_t currentCommandIndex(int bank)
+		{
+			if (generator1_)
+				return generator1_->currentCommandIndex(bank);
+			if (generator2_)
+				return generator2_->currentCommandIndex(bank);
+			if (generator3_)
+				return generator3_->currentCommandIndex(bank);
+
+			return {};
+		}
+		inline size_t commandCount(int bank)
+		{
+			if (generator1_)
+				return generator1_->commandCount(bank);
+			if (generator2_)
+				return generator2_->commandCount(bank);
+			if (generator3_)
+				return generator3_->commandCount(bank);
+
 			return {};
 		}
 		void setLoop(bool loop)
@@ -126,7 +149,8 @@ public:
 		MmlUtility::MultiBankMml<double, BANKS>* generator3_ = nullptr;
 	};
 public:
-	static constexpr size_t StreamingBuffurSize = 2048;
+	static constexpr size_t StreamingBufferSample = 512;
+	static constexpr size_t StreamingBufferSize = StreamingBufferSample * 4;
 
 	struct WaveOutParam {
 		static constexpr size_t Buffers = 4;
@@ -135,10 +159,11 @@ public:
 		int bufferWIndex = 0;
 		int bufferRIndex = 0;
 		WAVEHDR nowHeader[Buffers] = {};
-		int16_t pcmBuffer_[Buffers][2048];
+		int16_t pcmBuffer_[Buffers][StreamingBufferSize];
 		bool loopPlay_ = false;
 		bool exitPlay_ = false;
 	};
+
 	void writePcm(bool isZero=false);
 	void waveOutCallbackProc(
 		HWAVEOUT  hwo,
@@ -181,6 +206,8 @@ private:
 	CButton chkInvalidateTempoCommand_;
 	CButton chkDivideImportVol_;
 	CEdit txtLevelNoise_;
+
+	CString playInfos_;
 
 
 	afx_msg void OnBnClickedBtnPlay();

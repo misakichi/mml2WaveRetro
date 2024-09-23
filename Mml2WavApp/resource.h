@@ -56,6 +56,7 @@
 #define IDC_CHK_LOOP2                   1040
 #define IDC_CHK_EMULATE_8BIT            1040
 #define IDC_TXT_ENVELOPE_NO             1041
+#define IDC_STA_PLAY_BANK_INFO          1042
 #define ID_ACC_OPEN_FILE                32771
 #define ID_FILE_NEW32772                32772
 #define ID_FILE_OPEN32773               32773
@@ -79,7 +80,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        133
 #define _APS_NEXT_COMMAND_VALUE         32790
-#define _APS_NEXT_CONTROL_VALUE         1040
+#define _APS_NEXT_CONTROL_VALUE         1043
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -21,7 +21,12 @@ namespace MmlUtility
 		ToneLevelOutOfRangeLower,//音程が低すぎる
 		ToneLevelOutOfRangeUpper,//音程が高すぎる
 		WaveNoOutOfRange,
-		WaveDefineToneNoOutofRange,//使えない音色番号
+		WaveDefineToneNoOutOfRange,//使えない音色番号
+		WaveDefineWaveTypeNoOutOfRange,//使えない波形種別
+		WaveDefineFreqFlucOutOfRange, //周波数変動範囲外
+		WaveDefineLevelNoiseOutOfRange, //レベルノイズランダム範囲外
+		WaveDefineDutyCycleOutOfRange, //Duty切り替えタイミング範囲外
+		WaveDefineDutyRatioOutOfRange, //Duty比範囲外
 		WaveDefineNoneDuty,	 //デューティー比指定がない
 		WaveDefineOverDuties,//デューティー比指定が多すぎる
 		PanOutOfRange,//パン値が範囲外
@@ -217,11 +222,15 @@ namespace MmlUtility
 		inline std::vector<Type> generateSamples(unsigned samples);
 
 		template<unsigned Channels, typename Type>
-		Sample<Channels, Type> generate(bool* isCurrent=nullptr);
+		Sample<Channels, Type> generate(bool* isCurrent=nullptr, bool loopWait = false);
 
 		void setLoop(bool isLoop) { loopPlay_ = isLoop; }
 		void setDisableInfinityLoop(bool disableInfinityLoop) { disableInfinityLoop_ = disableInfinityLoop; }
 		bool isPlayEnd() const { return loopPlay_ == false && status_.commandIdx >= commands_.size(); }
+		bool isEndCommand() const { return status_.commandIdx >= commands_.size(); }
+		size_t currentCommandIndex()const { return status_.commandIdx; }
+		size_t commandCount()const { return  commands_.size(); }
+
 
 	private:
 #ifdef USE_CALCED_SIN_TABLE
@@ -360,6 +369,21 @@ namespace MmlUtility
 				ret &= bank_[i].isPlayEnd();
 			}
 			return ret;
+		}
+
+		size_t currentCommandIndex(int bank)
+		{
+			if (bank >= 0 && bank < Banks)
+				return bank_[bank].currentCommandIndex();
+			else
+				return 0;
+		}
+		size_t commandCount(int bank)
+		{
+			if (bank >= 0 && bank < Banks)
+				return bank_[bank].commandCount();
+			else
+				return 0;
 		}
 
 	private:

@@ -1,3 +1,13 @@
+//
+//  WavGenerator.inl
+//
+//  Copyright (c) 2023 misakichi kaminagare.
+//  https://github.com/misakichi/mml2WaveRetro
+//
+//  Distributed under the Boost Software License, Version 1.0.
+//  See accompanying file "LICENSE" or copy at
+//  http://www.boost.org/LICENSE_1_0.txt
+//
 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -233,7 +243,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		bool isFloatPoint = false;
 		char num[32] = {};
 		auto dst = num;
-		while (*p >= '0' && *p <= '9' || (*p=='.' && !isFloatPoint))
+		while ((*p >= '0' && *p <= '9') || (*p=='.' && !isFloatPoint))
 		{
 			isFloatPoint |= *p == '.';
 			*dst++ = *p++;
@@ -321,7 +331,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			if (LoopNestMax <= loopIndex)
 				return genError(ErrorReson::LoopNestOver);
 
-			loopStartIndex[loopIndex] = addCommands->size();
+			loopStartIndex[loopIndex] = (int)addCommands->size();
 
 			TypedCommand cmd;
 			cmd.command = TypedCommand::ECommand::Loop;
@@ -352,7 +362,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmd.loop.id = loopIndex;
 			auto loopStart = loopStartIndex[loopIndex];
 			cmd.loop.pairIndex = loopStart;
-			(*addCommands)[loopStart].loop.pairIndex = addCommands->size();
+			(*addCommands)[loopStart].loop.pairIndex = (int)addCommands->size();
 			(*addCommands)[loopStart].loop.num = loops;
 
 			bool hasTone = false;
@@ -365,7 +375,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				return genError(ErrorReson::NotFountToneLoop);
 
 
-			if (current!=SIZE_T_MAX)
+			if (current!=SIZE_MAX)
 			{
 				return genError(ErrorReson::CurrentPositionAfterInfinityLoop);
 			}
@@ -493,22 +503,18 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				}
 				len = CalcType(NoteLengthResolutio) / iLen;
 			}
-			if (*p == '.')
+			
+			auto oLen = len;
+			auto addShift = 1;
+			while (*p == '.')
 			{
 				if (tupletIndex >= 0)
 				{
 					return genError(ErrorReson::IliegalCommandInTuplet);
 				}
-				p++;
-				if (*p == '.')
-				{
-					p++;
-					len = len + len / 2 + len / 4;
-				}
-				else
-				{
-					len = len + len / 2;
-				}
+				len += oLen / (1<<addShift);
+				++addShift;
+				++p;
 			}
 
 			if (slurFromCmdIndex != -1)
@@ -560,23 +566,22 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		else if (c == 'L')
 		{
 			NUM_CHECK(*p);
-			state.len = getNumI();
-			if (state.len == 0)
+			auto ilen = getNumI();
+			if (ilen == 0)
 				return genError(ErrorReson::IllegalValueLength);
-			state.len = CalcType(NoteLengthResolutio) / state.len;
+			state.len = CalcType(NoteLengthResolutio) / ilen;
 
-			if (*p == '.')
+			auto oLen = state.len;
+			auto addShift = 1;
+			while (*p == '.')
 			{
-				p++;
-				if (*p == '.')
+				if (tupletIndex >= 0)
 				{
-					p++;
-					state.len = state.len + state.len/2 + state.len/4;
+					return genError(ErrorReson::IliegalCommandInTuplet);
 				}
-				else
-				{
-					state.len = state.len + state.len /2;
-				}
+				state.len += oLen / (1 << addShift);
+				++addShift;
+				++p;
 			}
 
 		}
@@ -601,7 +606,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			cmdVol.command = TypedCommand::ECommand::Volume;
 			NUM_CHECK(*p);
 			cmdVol.vol = getNumI();
-			if (cmdPan.vol < 0 || cmdPan.vol>255)
+			if (cmdVol.vol < 0 || cmdVol.vol>255)
 				return genError(ErrorReson::VolumeOutOfRange);
 			addCommands->push_back(cmdVol);
 
@@ -643,7 +648,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				{
 					TypedCommand& icmd = (*addCommands)[i];
 					if(icmd.command == TypedCommand::ECommand::Loop)
-						icmd.loop.pairIndex += currentLast;
+						icmd.loop.pairIndex += (int)currentLast;
 				}
 			}
 		}
@@ -722,7 +727,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				while (settings < LfoSettingParams)
 				{
 					NUM_CHECK(*p);
-					cmdLfo.lfo.setting[settings].start = getNumF();
+					cmdLfo.lfo.setting[settings].start = (float)getNumF();
 					cmdLfo.lfo.setting[settings].lerp = 1;
 					if (*p == 'S')
 					{
@@ -743,11 +748,11 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 					preStart = cmdLfo.lfo.setting[settings].start;
 
 					NUM_CHECK(*p);
-					cmdLfo.lfo.setting[settings].cycleMsec = getNumF();
+					cmdLfo.lfo.setting[settings].cycleMsec = (float)getNumF();
 					if (*p++ != ':')
 						return genError(ErrorReson::IllegalFormatLfoCommand);
 					NUM_CHECK(*p);
-					cmdLfo.lfo.setting[settings].percent = getNumF() / 100.0;
+					cmdLfo.lfo.setting[settings].percent = (float)getNumF() / 100.0f;
 					++settings;
 					if (*p != ':')
 					{
@@ -824,41 +829,59 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 				cmdType.wave.no = getNumI();
 				if (cmdType.wave.no < 0 || cmdType.wave.no >= ToneMax)
 				{
-					return genError(ErrorReson::WaveDefineToneNoOutofRange);
+					return genError(ErrorReson::WaveDefineToneNoOutOfRange);
 				}
 				if (*p++ != ':')
 					return genError(ErrorReson::IllegalFormatEnvelopeCommand);
 				NUM_CHECK(*p);
 				cmdType.wave.type = getNumI();
+				if (cmdType.wave.type < 0 || cmdType.wave.type > 4) {
+					return genError(ErrorReson::WaveDefineWaveTypeNoOutOfRange);
+				}
 				cmdType.wave.random = 0;
 				cmdType.wave.levelNoise = 0;
 				if (*p == 'R')
 				{
 					++p;
 					NUM_CHECK(*p);
-					cmdType.wave.random = getNumF();
+					cmdType.wave.random = (float)getNumF();
+					if (cmdType.wave.random < 0 || cmdType.wave.random > 100) {
+						return genError(ErrorReson::WaveDefineFreqFlucOutOfRange);
+					}
 				}
 				if (*p == 'N')
 				{
 					++p;
 					NUM_CHECK(*p);
-					cmdType.wave.levelNoise = getNumF();
+					cmdType.wave.levelNoise = (float)getNumF();
+					if (cmdType.wave.levelNoise < 0 || cmdType.wave.levelNoise > 100) {
+						return genError(ErrorReson::WaveDefineLevelNoiseOutOfRange);
+					}
 				}
 				cmdType.wave.cycle = 0;
 				if (*p == 'C')
 				{
 					++p;
 					NUM_CHECK(*p);
-					cmdType.wave.cycle = getNumF();
+					cmdType.wave.cycle = (float)getNumF();
+					if (cmdType.wave.cycle < 0 || cmdType.wave.cycle > 1000) {
+						return genError(ErrorReson::WaveDefineDutyCycleOutOfRange);
+					}
 				}
 				int duties = 0;
 				while (*p == ':')
 				{
 					++p;
-					NUM_CHECK(*p);
-					cmdType.wave.duty[duties] = getNumF();
-					if (++duties == decltype(cmdType.wave)::MaxDuties)
+					if (duties == decltype(cmdType.wave)::MaxDuties) {
 						return genError(ErrorReson::WaveDefineOverDuties);
+					}
+
+					NUM_CHECK(*p);
+					cmdType.wave.duty[duties] = (float)getNumF();
+					if (cmdType.wave.duty[duties] < 0 || cmdType.wave.duty[duties] > 99) {
+						return genError(ErrorReson::WaveDefineDutyRatioOutOfRange);
+					}
+					duties++;
 				}
 				if (duties == 0)
 					return genError(ErrorReson::WaveDefineNoneDuty);
@@ -873,10 +896,10 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 			return genError(ErrorReson::UnknownCommand);
 		}
 
-		auto offset = p - mml;
+		auto offset = (size_t)(std::max)((int64_t)0, (int64_t)(p - mml));
 		if (addCommands->size()>0 && current < offset)
 		{
-			current = SIZE_T_MAX;
+			current = SIZE_MAX;
 			addCommands->back().isCurrent = 1;
 		}
 	}
@@ -901,7 +924,7 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		}
 	}
 
-	if (current != SIZE_T_MAX)
+	if (current != SIZE_MAX)
 	{
 		TypedCommand cmdType;
 		cmdType.command = TypedCommand::ECommand::NOP;
@@ -952,27 +975,29 @@ inline void MmlUtility::WavGenerator<CalcT>::addCommand(std::vector<TypedCommand
 	commands_.insert(commands_.end(), commands.begin(), commands.end());
 }
 
-template<typename T>
-static T mod(const T& x, const T& y)
+namespace MmlMath
 {
-	return x % y;
+	template<typename T>
+	inline T mod(const T& x, const T& y)
+	{
+		return x % y;
+	}
+	template<>
+	inline float mod<float>(const float& x, const float& y)
+	{
+		return fmodf(x, y);
+	}
+	template<>
+	inline double mod<double>(const double& x, const double& y)
+	{
+		return fmod(x, y);
+	}
+	template<typename T>
+	inline T Lerp(T a, T b, T ratio)
+	{
+		return a * (T(1) - ratio) + b * ratio;
+	}
 }
-template<>
-static float mod<float>(const float& x, const float& y)
-{
-	return fmodf(x,y);
-}
-template<>
-static double mod<double>(const double& x, const double& y)
-{
-	return fmodf(x, y);
-}
-template<typename T>
-static T Lerp(T a, T b, T ratio)
-{
-	return a * (T(1) - ratio) + b * ratio;
-};
-
 
 template<typename CalcT>
 void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::WavGenerator<CalcT>::PlayStatus* playStatus, int sampleRate)
@@ -998,7 +1023,7 @@ void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::
 	//次の設定に行けるかチェック
 	if (settingIndex < lfoParams->settings-1)
 	{
-		const MmlCommand<CalcType>::LFO::Setting* nextSetting = &lfoParams->setting[settingIndex + 1];
+		const typename MmlCommand<CalcType>::LFO::Setting* nextSetting = &lfoParams->setting[settingIndex + 1];
 		if (CalcType(nextSetting->start) <= curPoint)
 		{
 			settingIndex++;
@@ -1016,7 +1041,7 @@ void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::
 		if (pNext->lerp == 1)
 		{
 			nextFreq = pNext->cycleMsec * sampleRate / 1000.0f;
-			percent = Lerp(0.0f, pNext->percent, (float)ratio);
+			percent = MmlMath::Lerp(0.0f, pNext->percent, (float)ratio);
 		}
 		else {
 			return;
@@ -1026,8 +1051,8 @@ void MmlUtility::WavGenerator<CalcT>::LfoState::updateSetting(const MmlUtility::
 	else if (settingIndex < lfoParams->settings - 1 && pNext->lerp!=0)
 	{
 		auto ratio = (curPoint - pCur->start) / (pNext->start - pCur->start);
-		nextFreq = Lerp(pCur->cycleMsec, pNext->cycleMsec, (float)ratio) * sampleRate / 1000.0f;
-		percent = Lerp(pCur->percent, pNext->percent, (float)ratio);
+		nextFreq = MmlMath::Lerp(pCur->cycleMsec, pNext->cycleMsec, (float)ratio) * sampleRate / 1000.0f;
+		percent = MmlMath::Lerp(pCur->percent, pNext->percent, (float)ratio);
 	}
 	else
 	{
@@ -1052,7 +1077,7 @@ inline std::vector<Type> MmlUtility::WavGenerator<CalcT>::generateSamples(unsign
 	Type* dst = result.begin();
 	while (samples--)
 	{
-		auto one = generateSample();
+		auto one = generate();
 		*dst++ = one.sample[0];
 		if constexpr (Channels == 2)
 			*dst++ = one.sample[1];
@@ -1070,7 +1095,7 @@ public:
 	template<typename CalcT>
 	SetType operator()(CalcT v)
 	{
-		static_assert(0,"this type not suport.");
+		//static_assert(0,"this type not suport.");
 	}
 };
 
@@ -1081,7 +1106,7 @@ public:
 	template<typename CalcT>
 	int16_t operator()(CalcT v)
 	{
-		return (std::max)(SHORT_MIN, (std::min)(SHORT_MAX, (int)(v * SHORT_MAX)));
+		return (std::max)(INT16_MIN, (std::min)((int)INT16_MAX, (int)(v * INT16_MAX)));
 	}
 };
 template<>
@@ -1111,13 +1136,18 @@ MmlUtility::Sample<Channels, Type> MmlUtility::WavGenerator<CalcT>::generate(boo
 	SetTypeValue<Type> setFunc;
 
 	static_assert(Channels == 1 || Channels == 2);
-	Sample<Channels, int16_t> result = {};
+	Sample<Channels, Type> result = {};
 
 TOP:
+	if (commands_.size() == 0)
+		return {};
+
 	if (status_.commandIdx >= commands_.size())
 	{
 		if (loopPlay_)
 		{
+			if (loopWait)
+				return {};
 			status_.commandIdx = 0;
 		}
 		else
@@ -1250,7 +1280,7 @@ TOP:
 		//ランダム周波数時は次の半分の周波数を決定
 		if (tone->randomRange != 0)
 		{
-			auto random = (CalcType(100) - CalcType(tone->randomRange)) + (CalcType(rand()) / RAND_MAX) * (CalcType(tone->randomRange) * 2);
+			auto random = (CalcType(100) - CalcType(tone->randomRange)) + (CalcType(rand()) / CalcType(RAND_MAX)) * (CalcType(tone->randomRange) * 2);
 			auto freq = baseFreqSamples * random / 200;
 			status_.waveFreqDiv2 = freq;
 
@@ -1288,7 +1318,7 @@ TOP:
 		//bpm=1分間の四分音符数
 		//length=分解能単位の長さ
 		//bpm * 4 / length 
-		lengthInfo.samples = CalcType(sampleRate_) * 60 * 4 * lengthInfo.length / NoteLengthResolutio / lengthInfo.bpm;
+		lengthInfo.samples = uint64_t(CalcType(sampleRate_) * 60 * 4 / NoteLengthResolutio / lengthInfo.bpm * lengthInfo.length);
 
 		for (auto& li : status_.recentLength)
 			samples += li.samples;
@@ -1314,7 +1344,7 @@ TOP:
 			status_.waveStep = 0;
 			status_.waveDiv2InSample = 0;
 
-			status_.toneSamples = CalcType(sampleRate_) * 60 * 4 * cmd.note.noteTotalLength / NoteLengthResolutio / lengthInfo.bpm;
+			status_.toneSamples = int(CalcType(sampleRate_) * 60 * 4 * cmd.note.noteTotalLength / NoteLengthResolutio / lengthInfo.bpm);
 			status_.toneCurSample = 0;
 
 			div2Set(&tones_[status_.toneIndex], status_.baseFreqSamples);
@@ -1356,14 +1386,14 @@ REPROC2:
 				if (crossSamples >= restSample)
 				{
 					auto ratio = restSample / crossSamples;
-					baseFreqSamples = Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
+					baseFreqSamples = MmlMath::Lerp(status_.baseFreqSamples, status_.slurTo, CalcType(1) - ratio);
 				}
 			}
 
 			//LFOによる変動
 			if (status_.lfoTone.percent != 0)
 			{
-				auto t = mod(CalcType(status_.lfoTone.sampleProgress), status_.lfoTone.freqSample);
+				auto t = MmlMath::mod(CalcType(status_.lfoTone.sampleProgress), status_.lfoTone.freqSample);
 				t /= status_.lfoTone.freqSample;
 #ifdef USE_CALCED_SIN_TABLE
 				t *= CalcType(360);
@@ -1374,10 +1404,10 @@ REPROC2:
 #endif
 				float shift = (float)(modify * status_.lfoTone.percent);
 				if (shift < 0) {
-					baseFreqSamples /= powf(2.0f, (double)abs(shift) / 12);
+					baseFreqSamples /= CalcType(pow(2.0, (double)abs(shift) / 12));
 				}
 				else if (shift > 0) {
-					baseFreqSamples *= pow((double)2, (double)(shift) / 12);
+					baseFreqSamples *= CalcType(pow(2.0, (double)(shift) / 12));
 				}
 			}
 
@@ -1475,8 +1505,8 @@ REPROC2:
 		case EWaveCurveType::Noise:
 			{
 				auto duty = status_.duty;
-				auto noise = (CalcType(rand()) / RAND_MAX - CalcType(0.5)) * 2;
-				auto noiseFreq = Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
+				auto noise = (CalcType(rand()) / CalcType(RAND_MAX) - CalcType(0.5)) * 2;
+				auto noiseFreq = MmlMath::Lerp(CalcType(sampleRate_) / 2 - 200, cmd.note.toneFreq, duty / 100);
 				level = lpf_.lpf(noise, noiseFreq, sampleRate_);
 				//level /= noiseFreq / (CalcType(sampleRate_) / 2 - 200);
 				//level = Lerp(noise, filteredNoise, duty / 100);
@@ -1501,7 +1531,7 @@ REPROC2:
 			if (status_.isSlurFrom == 0)
 			{
 				auto ratio = (fNowSample - envelope.envelopeAtackSamples) / envelope.envelopeDecaySamples;
-				adsr = Lerp(envelope.envelopeAtackLevel, envelope.envelopeSustainLevel, ratio);
+				adsr = MmlMath::Lerp(envelope.envelopeAtackLevel, envelope.envelopeSustainLevel, ratio);
 			}
 		}
 		else if (restSample < envelope.envelopeReleaseSamples)
@@ -1516,13 +1546,13 @@ REPROC2:
 		//ボリュームノイズ
 		if (tone->levelNoise != 0)
 		{
-			auto modify = CalcType(1.0) - (CalcType(rand()) / RAND_MAX * tone->levelNoise / 100);
+			auto modify = CalcType(1.0) - (CalcType(rand()) / CalcType(RAND_MAX) * tone->levelNoise / 100);
 			level *= modify;
 		}
 		//ボリュームLFO
 		if (status_.lfoVolume.percent != 0)
 		{
-			auto t = mod(CalcType(status_.lfoVolume.sampleProgress), status_.lfoVolume.freqSample);
+			auto t = MmlMath::mod(CalcType(status_.lfoVolume.sampleProgress), status_.lfoVolume.freqSample);
 			t /= status_.lfoVolume.freqSample;
 #ifdef USE_CALCED_SIN_TABLE
 			t *= CalcType(360);
@@ -1547,9 +1577,9 @@ REPROC2:
 	{
 		//sample = (CalcType(0.7f) + (CalcType(rand()) / RAND_MAX) * 3/ 10) * sample;
 		//L
-		result.sample[0] = setFunc(level);
+		result.sample[0] = setFunc(level * (256 - status_.pan) / 256);
 		//R
-		result.sample[1] = setFunc(level);
+		result.sample[1] = setFunc(level * (status_.pan) / 256);
 	}
 
 	status_.waveDiv2InSample += 1;
@@ -1558,9 +1588,9 @@ REPROC2:
 
 
 	if (status_.lfoTone.freqSample != 0)
-		status_.lfoTone.sampleProgress = mod(status_.lfoTone.sampleProgress + 1, status_.lfoTone.freqSample);
+		status_.lfoTone.sampleProgress = MmlMath::mod(status_.lfoTone.sampleProgress + 1, status_.lfoTone.freqSample);
 	if (status_.lfoVolume.freqSample != 0)
-		status_.lfoVolume.sampleProgress = mod(status_.lfoVolume.sampleProgress + 1, status_.lfoVolume.freqSample);
+		status_.lfoVolume.sampleProgress = MmlMath::mod(status_.lfoVolume.sampleProgress + 1, status_.lfoVolume.freqSample);
 
 	if (status_.noteProcedSamples == status_.noteSamples)
 		status_.commandIdx++;
@@ -1627,7 +1657,7 @@ MmlUtility::GenerateMmlToPcmResult MmlUtility::MultiBankMml<CalcT,Banks>::compil
 	for (int i = 0; i < Banks; i++)
 	{
 		auto& generator = bank_[i];
-		std::vector<WavGenerator<CalcT>::TypedCommand> commands;
+		std::vector<typename WavGenerator<CalcT>::TypedCommand> commands;
 		std::string mml = defaultSetting;
 		auto defaultSize = mml.length();
 		mml += prepareSharedMml;
@@ -1699,7 +1729,7 @@ void MmlUtility::MultiBankMml<CalcT, Banks>::skipToCurrent()
 		while (!isCurrent)
 		{
 			
-			bank_[currentBank_].generate<1,int16_t>(&isCurrent);
+			bank_[currentBank_].template generate<1,int16_t>(&isCurrent);
 			offset++;
 		}
 
@@ -1710,46 +1740,42 @@ void MmlUtility::MultiBankMml<CalcT, Banks>::skipToCurrent()
 				continue;
 			auto skipSamples = offset;
 			while (skipSamples--)
-				bank_[i].generate<1, int16_t>();
+				bank_[i].template generate<1, int16_t>();
 		}
 	}
 }
 
 template<typename CalcT, int Banks>
-template<unsigned Channel, typename Type>
+template<unsigned Channels, typename Type>
 inline std::vector<Type> MmlUtility::MultiBankMml<CalcT, Banks>::generate(int samples)
 {
-	static_assert(Channel == 1 || Channel == 2);
+	if (samples <= 0)
+		return std::vector<Type>();
+	static_assert(Channels == 1 || Channels == 2);
 	
 	std::vector<Type> result;
-	result.resize(samples* Channel);
-	for (int i = 0; i < Banks; i++)
+	result.resize(samples * Channels);
+	auto it = result.begin();
+	auto end = result.end();
+	do
 	{
-		auto it = result.begin();
-		auto num = samples;
-		while (num--)
+		bool loopOk = true;
+		for (int i = 0; i < Banks; i++)
+			loopOk &= bank_[i].isEndCommand();
+
+		Sample<Channels, Type> sample = {};
+		for (int i = 0; i < Banks; i++)
 		{
-			auto one = bank_[i].generate<Channel, Type>();
-			*it++ += one.sample[0];
-			if constexpr (Channel==2)
-				*it++ += one.sample[1];
+			auto one = bank_[i].template generate<Channels, Type>(nullptr, !loopOk);
+
+			sample.sample[0] += one.sample[0];
+			if constexpr (Channels == 2)
+				sample.sample[1] += one.sample[1];
 		}
-	}
+		*it++ = sample.sample[0];
+		if constexpr (Channels == 2)
+			*it++ = sample.sample[1];
+	} while (it != end);
 	return result;
 }
 
-template<unsigned Channels, typename CalcT, int Banks>
-bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
-{
-	MultiBankMml<CalcT, Banks> generator;
-	auto result = generator.compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);
-	if (result.result != ErrorReson::NoError)
-	{
-		dest = result;
-		return false;
-	}
-
-	generator.skipToCurrent();
-
-	return true;
-}

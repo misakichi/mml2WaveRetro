@@ -244,6 +244,7 @@ void CMml2WavDlg::OnPaint()
 	else
 	{
 		CDialogEx::OnPaint();
+
 	}
 }
 
@@ -372,7 +373,12 @@ CMml2WavDlg::GeneratorWrapper* CMml2WavDlg::genWavReady(WavData& dest, bool chec
 			errDetail[ErrorReson::ToneLevelOutOfRangeLower] = "音程が低すぎる";
 			errDetail[ErrorReson::ToneLevelOutOfRangeUpper] = "音程が高すぎる";
 			errDetail[ErrorReson::WaveNoOutOfRange] = "音色番号が範囲外";
-			errDetail[ErrorReson::WaveDefineToneNoOutofRange] = "使えない音色番号";
+			errDetail[ErrorReson::WaveDefineToneNoOutOfRange] = "使えない音色番号";
+			errDetail[ErrorReson::WaveDefineWaveTypeNoOutOfRange] = "使えない波形種別";
+			errDetail[ErrorReson::WaveDefineFreqFlucOutOfRange]  =  "周波数変動範囲外";
+			errDetail[ErrorReson::WaveDefineLevelNoiseOutOfRange] = "レベルノイズランダム範囲外";
+			errDetail[ErrorReson::WaveDefineDutyCycleOutOfRange] =  "Duty切り替えタイミング範囲外";
+			errDetail[ErrorReson::WaveDefineDutyRatioOutOfRange] = "Duty比範囲外";
 			errDetail[ErrorReson::WaveDefineNoneDuty] = "デューティー比指定がない";
 			errDetail[ErrorReson::WaveDefineOverDuties] = "ーティー比指定が多すぎる";
 			errDetail[ErrorReson::PanOutOfRange] = "パン値が範囲外";
@@ -496,6 +502,7 @@ void CMml2WavDlg::OnBnClickedBtnPlay()
 {
 	play(false);
 }
+
 void CMml2WavDlg::play(bool isCheckWave)
 {
 	OnBnClickedBtn();
@@ -535,33 +542,6 @@ void CMml2WavDlg::play(bool isCheckWave)
 		writePcm();
 
 }
-#if 0
-void CMml2WavDlg::preparePcm(bool isZero)
-{
-	auto param = (WaveOutParam*)playing_;
-	int writeIdx = param->bufferPIndex % WaveOutParam::Buffers;
-	WAVEHDR& header = param->nowHeader[writeIdx];
-	memset(&header, 0, sizeof(header));
-	header.lpData = (char*)param->pcmBuffer_[writeIdx];
-	header.dwFlags = writeIdx == 0 ? WHDR_BEGINLOOP : 0;
-	header.dwFlags = 0;// |= writeIdx == WaveOutParam::Buffers - 1 ? WHDR_ENDLOOP : 0;
-	header.dwLoops = 0;
-
-	if (isZero)
-	{
-		header.dwBufferLength = 0;
-		param->pcmBuffer_[writeIdx][0] = 0;
-	}
-	else
-	{
-		header.dwBufferLength = StreamingBuffurSize;
-		auto genPcm = param->generator_->generate<2, int16_t>(StreamingBuffurSize / 2 / sizeof(int16_t));
-		memcpy(header.lpData, genPcm.data(), (std::min)(genPcm.size() * sizeof(int16_t), StreamingBuffurSize));
-	}
-
-	param->bufferPIndex++;
-}
-#endif
 
 void CMml2WavDlg::writePcm(bool isZero)
 {
@@ -574,15 +554,40 @@ void CMml2WavDlg::writePcm(bool isZero)
 
 	param->bufferWIndex++;
 
-	header.dwBufferLength = StreamingBuffurSize;
+	header.dwBufferLength = StreamingBufferSize;
 	if (isZero)
 	{
-		memset(param->pcmBuffer_[writeIdx], 0, sizeof(param->pcmBuffer_[writeIdx]));
+		memset(header.lpData, 0, StreamingBufferSize);
 	}
 	else
 	{
-		auto genPcm = param->generator_->generate<2, int16_t>(StreamingBuffurSize / 2 / sizeof(int16_t));
-		memcpy(header.lpData, genPcm.data(), (std::min)(genPcm.size() * sizeof(int16_t), StreamingBuffurSize));
+		auto genPcm = param->generator_->generate<2, int16_t>(StreamingBufferSample);
+		auto cpySize = (std::min)(genPcm.size() * sizeof(int16_t), StreamingBufferSize);
+
+		memcpy(header.lpData, genPcm.data(), cpySize);
+		if (auto rest = StreamingBufferSize - cpySize > 0) {
+			memset(header.lpData + cpySize, 0, rest);
+		}
+		//GetDlgItem(IDC_STA_PLAY_BANK_INFO)->RedrawWindow();
+		//CString infos;
+		//for (int i = 0; i < BANKS; i++)
+		//{
+		//	CString info;
+		//	info.Format("%c %4d/%4d\n", 'A' + i, (int)param->generator_->currentCommandIndex(i), (int)param->generator_->commandCount(i));
+		//	infos += info;
+		//}
+		//playInfos_ = infos;
+		//if (auto label = GetDlgItem(IDC_STA_PLAY_BANK_INFO))
+		//{
+		//	label->SendMessage(WM_SETREDRAW, FALSE, 0);
+		//	//label->RedrawWindow();
+		////	label->ShowWindow(SW_HIDE);
+		//	label->SetWindowText(playInfos_);
+		//	label->SendMessage(WM_SETREDRAW, TRUE, 0);
+		////	label->ShowWindow(SW_SHOW);
+		//	label->InvalidateRect(NULL);
+		//}
+
 	}
 	auto result = waveOutPrepareHeader(param->hWaveOut_, &header, sizeof(header));
 	if (result != 0)
@@ -597,8 +602,7 @@ void CMml2WavDlg::writePcm(bool isZero)
 
 void CMml2WavDlg::OnAccPlay()
 {
-	OnBnClickedBtn();
-	play(false);
+	OnBnClickedBtnPlay();
 }
 
 
