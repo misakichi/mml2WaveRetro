@@ -96,6 +96,7 @@ void CMml2WavDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_TAB_BANK, tabBank_);
 	DDX_Control(pDX, IDC_CBO_TONE_NUMBER, cboToneNumber_);
 	DDX_Control(pDX, IDC_CHK_LOOP, chkLoop_);
+	DDX_Control(pDX, IDC_CHK_PAUSE, chkPauseBtn_);
 	DDX_Control(pDX, IDC_CHK_START_FROM_CURRENT, chkFromCurrent_);
 	DDX_Control(pDX, IDC_CHK_CURRENT_BANK, chkCurrentBank_);
 	DDX_Control(pDX, IDC_CHK_EXTERNAL_IMPORT_INVALIDATE_TEMPO_COMMAND, chkInvalidateTempoCommand_);
@@ -118,7 +119,7 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_NOTIFY(TCN_SELCHANGE, IDC_TAB_BANK, &CMml2WavDlg::OnTcnSelchangeTabBank)
 	ON_EN_CHANGE(IDC_TXT_MML, &CMml2WavDlg::OnEnChangeTxtMml)
 	ON_BN_CLICKED(IDC_BUTTON1, &CMml2WavDlg::OnBnClickedButton1)
-	ON_BN_CLICKED(IDC_BTN__STOP, &CMml2WavDlg::OnBnClickedBtn)
+	ON_BN_CLICKED(IDC_BTN__STOP, &CMml2WavDlg::OnBnClickedStopBtn)
 	ON_BN_CLICKED(IDC_BTN_ENVELOPE_CMD, &CMml2WavDlg::OnBnClickedBtnEnvelopeCmd)
 	ON_BN_CLICKED(IDC_BTN_ENV_TEMPLATE_DEFAULT, &CMml2WavDlg::OnBnClickedBtnEnvTemplateDefault)
 	ON_BN_CLICKED(IDC_BTN_ENV_TEMPLATE_NONE, &CMml2WavDlg::OnBnClickedBtnEnvTemplateNone)
@@ -141,6 +142,7 @@ BEGIN_MESSAGE_MAP(CMml2WavDlg, CDialogEx)
 	ON_COMMAND(ID_ACC_SAVE_FILE, &CMml2WavDlg::OnCmdSaveFile)
 	ON_COMMAND(ID_ACC_PLAY, &CMml2WavDlg::OnAccPlay)
 	ON_COMMAND(ID_ACC_STOP, &CMml2WavDlg::OnAccStop)
+	ON_BN_CLICKED(IDC_CHK_PAUSE, &CMml2WavDlg::OnBnClickedChkPause)
 END_MESSAGE_MAP()
 
 
@@ -275,11 +277,11 @@ void CMml2WavDlg::RefreshDutyList()
 
 
 
-CMml2WavDlg::GeneratorWrapper* CMml2WavDlg::genWavReady(WavData& dest, bool checkMml)
+std::shared_ptr<CMml2WavDlg::GeneratorWrapper> CMml2WavDlg::genWavReady(WavData& dest, bool checkMml)
 {
 	
 	int sampleRate = 44100;
-	auto readyGenerator = [&](auto dummyCalcTypeVariable, MmlUtility::GenerateMmlToPcmResult& result)->GeneratorWrapper*
+	auto readyGenerator = [&](auto dummyCalcTypeVariable, MmlUtility::GenerateMmlToPcmResult& result)->std::shared_ptr<GeneratorWrapper>
 	{			  
 		CString rateStr;
 		cboSampleRate_.GetWindowText(rateStr);
@@ -292,7 +294,7 @@ CMml2WavDlg::GeneratorWrapper* CMml2WavDlg::genWavReady(WavData& dest, bool chec
 		if(chkFromCurrent_.GetCheck()!=0)
 			txtMml_.GetSel(curStart, curEnd);
 		
-		auto generator = new GeneratorWrapper();
+		auto generator = std::make_shared<GeneratorWrapper>();
 		generator->reset<decltype(dummyCalcTypeVariable)>();
 		if (chkCurrentBank_.GetCheck() == 0 && !checkMml)
 		{
@@ -424,7 +426,7 @@ CMml2WavDlg::GeneratorWrapper* CMml2WavDlg::genWavReady(WavData& dest, bool chec
 	};
 	MmlUtility::GenerateMmlToPcmResult result;
 	bool ret = false;
-	GeneratorWrapper* generator = nullptr;
+	std::shared_ptr<GeneratorWrapper> generator = nullptr;
 	switch (cboFloatType_.GetCurSel())
 	{
 	case 0: generator = readyGenerator(CFixFloat<>(), result); break;
@@ -433,7 +435,6 @@ CMml2WavDlg::GeneratorWrapper* CMml2WavDlg::genWavReady(WavData& dest, bool chec
 	}
 	if (generator==nullptr || result.result != MmlUtility::ErrorReson::NoError)
 	{
-		delete generator;
 		return nullptr;
 	}
 
@@ -468,7 +469,7 @@ void CMml2WavDlg::waveOutCallbackProc(
 	UINT      uMsg
 )
 {
-	auto param = (WaveOutParam*)playing_;
+	auto param = playing_;
 	bool isWrite = false;
 	switch (uMsg)
 	{
@@ -509,23 +510,27 @@ void CMml2WavDlg::OnBnClickedBtnPlay()
 	play(false);
 }
 
+#include <thread>
+
 void CMml2WavDlg::play(bool isCheckWave)
 {
-	OnBnClickedBtn();
+	OnBnClickedStopBtn();
 
 	WavData data;
-	GeneratorWrapper* gen = genWavReady(data, isCheckWave);
+	std::shared_ptr<GeneratorWrapper> gen = genWavReady(data, isCheckWave);
 	if (!gen)
 		return;
 	gen->setLoop(chkLoop_.GetCheck() != 0);
 	//assert(playing_ == nullptr);
-	auto playParam = new WaveOutParam();
+	auto playParam = std::make_shared<WaveOutParam>();
 	playParam->hWaveOut_ = nullptr;
 	playParam->loopPlay_ = 0;
 	playParam->generator_ = gen;
 	playParam->bufferWIndex = 0;
 	playParam->bufferRIndex = 0;
-	playing_ = (playParam);
+	playParam->genRqEvent = CreateEvent(NULL, FALSE, TRUE, NULL);
+	InitializeCriticalSection(&playParam->generatedMutex);
+	playing_ = playParam;
 
 
 	auto result =  waveOutOpen(
@@ -543,19 +548,67 @@ void CMml2WavDlg::play(bool isCheckWave)
 		return;
 	}
 
+	std::thread genThread([playParam,&isPause= chkPause_]()
+		{
+			while (playParam->hWaveOut_)
+			{
+				if (playParam->generatedBuffer_.size() < WaveOutParam::Buffers) {
+					auto one = std::make_shared<StreamPcmBufferOne>();
+					if(isPause)
+					{
+						memset(one->pcmBuffer, 0, StreamingBufferSize);
+					}
+					else
+					{
+						auto genPcm = playParam->generator_->generate<2, int16_t>(StreamingBufferSample);
+						auto cpySize = (std::min)(genPcm.size() * sizeof(int16_t), StreamingBufferSize);
+						memcpy(one->pcmBuffer, genPcm.data(), cpySize);
+						if (auto rest = StreamingBufferSize - cpySize > 0) {
+							memset(one->pcmBuffer + cpySize / sizeof(int16_t), 0, rest);
+						}
+					}
 
-	while (playParam->bufferWIndex - playParam->bufferRIndex < WaveOutParam::Buffers)
+					EnterCriticalSection(&playParam->generatedMutex);
+					playParam->generatedBuffer_.push_back(one);
+					LeaveCriticalSection(&playParam->generatedMutex);
+				}
+				else
+				{
+					WaitForSingleObject(playParam->genRqEvent, 100);
+				}
+			}
+			CloseHandle(playParam->genRqEvent);
+			DeleteCriticalSection(&playParam->generatedMutex);
+		}
+	);
+	genThread.detach();
+
+	while (playParam->generatedBuffer_.size() < WaveOutParam::Buffers)
+		Sleep(100);
+
+	for (int i = 0; i < WaveOutParam::Buffers; i++)
 		writePcm();
 
 }
 
 void CMml2WavDlg::writePcm(bool isZero)
 {
-	auto param = (WaveOutParam*)playing_;
+	auto param = playing_;
 	int writeIdx = param->bufferWIndex % WaveOutParam::Buffers;
 	WAVEHDR& header = param->nowHeader[writeIdx];
 	memset(&header, 0, sizeof(header));
-	header.lpData = (char*)param->pcmBuffer_[writeIdx];
+	while (param->generatedBuffer_.size() == 0)
+		Sleep(0);
+	EnterCriticalSection(&param->generatedMutex);
+	param->pcmBuffer_[writeIdx] = param->generatedBuffer_.back();
+	param->generatedBuffer_.pop_back();
+	LeaveCriticalSection(&param->generatedMutex);
+
+	//次のバッファの用意させる
+	SetEvent(param->genRqEvent);
+
+
+	header.lpData = (char*)param->pcmBuffer_[writeIdx]->pcmBuffer;
 	header.dwLoops = 0;
 
 	param->bufferWIndex++;
@@ -565,36 +618,7 @@ void CMml2WavDlg::writePcm(bool isZero)
 	{
 		memset(header.lpData, 0, StreamingBufferSize);
 	}
-	else
-	{
-		auto genPcm = param->generator_->generate<2, int16_t>(StreamingBufferSample);
-		auto cpySize = (std::min)(genPcm.size() * sizeof(int16_t), StreamingBufferSize);
 
-		memcpy(header.lpData, genPcm.data(), cpySize);
-		if (auto rest = StreamingBufferSize - cpySize > 0) {
-			memset(header.lpData + cpySize, 0, rest);
-		}
-		//GetDlgItem(IDC_STA_PLAY_BANK_INFO)->RedrawWindow();
-		//CString infos;
-		//for (int i = 0; i < BANKS; i++)
-		//{
-		//	CString info;
-		//	info.Format("%c %4d/%4d\n", 'A' + i, (int)param->generator_->currentCommandIndex(i), (int)param->generator_->commandCount(i));
-		//	infos += info;
-		//}
-		//playInfos_ = infos;
-		//if (auto label = GetDlgItem(IDC_STA_PLAY_BANK_INFO))
-		//{
-		//	label->SendMessage(WM_SETREDRAW, FALSE, 0);
-		//	//label->RedrawWindow();
-		////	label->ShowWindow(SW_HIDE);
-		//	label->SetWindowText(playInfos_);
-		//	label->SendMessage(WM_SETREDRAW, TRUE, 0);
-		////	label->ShowWindow(SW_SHOW);
-		//	label->InvalidateRect(NULL);
-		//}
-
-	}
 	auto result = waveOutPrepareHeader(param->hWaveOut_, &header, sizeof(header));
 	if (result != 0)
 		OutputDebugString("failed waveOutPrepareHeader.");
@@ -614,12 +638,12 @@ void CMml2WavDlg::OnAccPlay()
 
 void CMml2WavDlg::OnAccStop()
 {
-	OnBnClickedBtn();
+	OnBnClickedStopBtn();
 }
 
-void CMml2WavDlg::OnBnClickedBtn()
+void CMml2WavDlg::OnBnClickedStopBtn()
 {
-	auto param = (WaveOutParam*)playing_;
+	auto param = playing_;
 	if(param)
 	{
 		if (param->hWaveOut_)
@@ -638,9 +662,8 @@ void CMml2WavDlg::OnBnClickedBtn()
 	while (playing_!=nullptr)
 	{
 		if (playing_->hWaveOut_ == NULL)
-		{
+		{			
 			playing_ = nullptr;
-
 		}
 	}
 }
@@ -691,7 +714,7 @@ void CMml2WavDlg::OnEnChangeTxtDutySwitchTiming()
 void CMml2WavDlg::OnBnClickedBtnOutput()
 {
 	WavData data;
-	GeneratorWrapper* gen = genWavReady(data);
+	auto gen = genWavReady(data);
 	if (!gen)
 		return;
 
@@ -1016,6 +1039,8 @@ void CMml2WavDlg::OnBnClickedBtnImportExternalMmlFromClipboard()
 	}
 	if (!OpenClipboard())
 		return;
+	if (!closeFile())
+		return;
 
 	auto hClip = GetClipboardData(CF_TEXT);
 	if (hClip != NULL)
@@ -1178,6 +1203,7 @@ bool CMml2WavDlg::closeFile()
 		{
 		}
 	}
+	OnBnClickedStopBtn();
 	txtMml_.SetWindowText("");
 	shared_ = "";
 	for (auto& bank : bank_)
@@ -1230,6 +1256,7 @@ void CMml2WavDlg::OnCmdOpenFile()
 	fread(buffer, 1, len, fp);
 	str += buffer;
 	fclose(fp);
+	delete buffer;
 	filePath_ = filePath;
 
 	loadMml(str, false);
@@ -1287,3 +1314,10 @@ BOOL CMml2WavDlg::PreTranslateMessage(MSG* pMsg)
 	return CDialogEx::PreTranslateMessage(pMsg);
 }
 
+
+
+void CMml2WavDlg::OnBnClickedChkPause()
+{
+	chkPause_ = chkPauseBtn_.GetCheck();
+
+}

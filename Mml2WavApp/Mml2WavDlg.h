@@ -11,7 +11,8 @@
 
 #include "WavGenerator.h"
 #include <array>
-
+#include <deque>
+#include <memory>
 
 class CEditEx : public CEdit
 {
@@ -39,12 +40,20 @@ public:
 	class GeneratorWrapper
 	{
 	public:
+		~GeneratorWrapper()
+		{
+			reset<void>();
+		}
+
 		template<typename T>
 		void reset()
 		{
 			delete generator1_;
 			delete generator2_;
 			delete generator3_;
+			generator1_ = nullptr;
+			generator2_ = nullptr;
+			generator3_ = nullptr;
 		}
 
 		template<>
@@ -154,20 +163,28 @@ public:
 		MmlUtility::MultiBankMml<double, BANKS>* generator3_ = nullptr;
 	};
 public:
-	static constexpr size_t StreamingBufferSample = 512;
+	static constexpr size_t StreamingBufferSample = 1024;
 	static constexpr size_t StreamingBufferSize = StreamingBufferSample * 4;
-
+	struct StreamPcmBufferOne {
+		int16_t pcmBuffer[StreamingBufferSize];
+	};
 	struct WaveOutParam {
 		static constexpr size_t Buffers = 4;
-		GeneratorWrapper* generator_ = NULL;
+		std::shared_ptr<GeneratorWrapper> generator_;
 		HWAVEOUT hWaveOut_ = NULL;
 		int bufferWIndex = 0;
 		int bufferRIndex = 0;
 		WAVEHDR nowHeader[Buffers] = {};
-		int16_t pcmBuffer_[Buffers][StreamingBufferSize];
+		std::shared_ptr<StreamPcmBufferOne> pcmBuffer_[Buffers] = {};
+
+		std::deque<std::shared_ptr<StreamPcmBufferOne>> generatedBuffer_;
+		CRITICAL_SECTION generatedMutex;
+		HANDLE genRqEvent = NULL;
 		bool loopPlay_ = false;
 		bool exitPlay_ = false;
 	};
+
+
 
 	void writePcm(bool isZero=false);
 	void waveOutCallbackProc(
@@ -206,6 +223,7 @@ private:
 	CTabCtrl tabBank_;
 	CComboBox cboToneNumber_;
 	CButton chkLoop_;
+	CButton chkPauseBtn_;
 	CButton chkFromCurrent_;
 	CButton chkCurrentBank_;
 	CButton chkInvalidateTempoCommand_;
@@ -214,6 +232,7 @@ private:
 
 	CString playInfos_;
 
+	bool chkPause_  = false;
 
 	afx_msg void OnBnClickedBtnPlay();
 	afx_msg void OnBnClickedBtnDutyRatioAdd();
@@ -224,7 +243,7 @@ private:
 	afx_msg void OnTcnSelchangeTabBank(NMHDR* pNMHDR, LRESULT* pResult);
 	afx_msg void OnEnChangeTxtMml();
 	afx_msg void OnBnClickedButton1();
-	afx_msg void OnBnClickedBtn();
+	afx_msg void OnBnClickedStopBtn();
 	afx_msg void OnBnClickedBtnEnvelopeCmd();
 	afx_msg void OnBnClickedBtnEnvTemplateDefault();
 	afx_msg void OnBnClickedBtnEnvTemplateNone();
@@ -247,7 +266,7 @@ private:
 
 	void RefreshDutyList();
 	void SetEnvelopeTemplate(int no);
-	GeneratorWrapper* genWavReady(WavData& dest, bool checkMml=false);
+	std::shared_ptr<GeneratorWrapper> genWavReady(WavData& dest, bool checkMml=false);
 	void play(bool isCheckWave);
 	bool closeFile();
 
@@ -256,7 +275,7 @@ private:
 
 	CString genWaveCommand();
 
-	volatile WaveOutParam* playing_;
+	std::shared_ptr<WaveOutParam> playing_;
 
 	std::string shared_;
 	std::array<std::string, BANKS> bank_;
@@ -270,4 +289,6 @@ private:
 	CButton chkEmulate8Bit_;
 
 	//GeneratorWrapper* generator_;
+public:
+	afx_msg void OnBnClickedChkPause();
 };
