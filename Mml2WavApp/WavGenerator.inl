@@ -1096,7 +1096,7 @@ public:
 };
 template<typename CalcT>
 template<unsigned Channels, typename Type>
-MmlUtility::Sample<Channels, Type> MmlUtility::WavGenerator<CalcT>::generate(bool* isCurrent)
+MmlUtility::Sample<Channels, Type> MmlUtility::WavGenerator<CalcT>::generate(bool* isCurrent, bool loopWait)
 {
 	auto Abs = [](auto v)
 	{
