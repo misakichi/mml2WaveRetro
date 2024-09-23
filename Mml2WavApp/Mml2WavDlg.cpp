@@ -1,5 +1,11 @@
-﻿
-// MFCApplication1Dlg.cpp : 実装ファイル
+﻿//
+//  Mml2WavDlg.cpp
+//
+//  Copyright (c) 2023 misakichi kaminagare.
+//
+//  Distributed under the Boost Software License, Version 1.0.
+//  See accompanying file "LICENSE" or copy at
+//  http://www.boost.org/LICENSE_1_0.txt
 //
 
 #include "pch.h"
@@ -750,7 +756,8 @@ void CMml2WavDlg::OnBnClickedBtnOutput()
 void CMml2WavDlg::setWindowText()
 {
 	CString title;
-	title.Format("mml2wav Retro - %s %s", filePath_ == "" ? "無題" : filePath_, isDirty_ ? "*" : "");
+	CString titleStr = filePath_.IsEmpty() ? "無題" : filePath_;
+	title.Format("mml2wav Retro - %s %s", (const char*)titleStr, isDirty_ ? "*" : "");
 	SetWindowText(title);
 
 }

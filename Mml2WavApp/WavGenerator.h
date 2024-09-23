@@ -1,8 +1,22 @@
 #pragma once
+#ifndef _WAV_GENERATOR_H
+#define _WAV_GENERATOR_H
+
+//
+//  WavGenerator.h
+//
+//  Copyright (c) 2023 misakichi kaminagare.
+//  https://github.com/misakichi/mml2WaveRetro
+//
+//  Distributed under the Boost Software License, Version 1.0.
+//  See accompanying file "LICENSE" or copy at
+//  http://www.boost.org/LICENSE_1_0.txt
+//
 
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <array>
 #include "FixFloat.h"
 
 namespace MmlUtility
@@ -202,7 +216,7 @@ namespace MmlUtility
 	class WavGenerator
 	{
 	public:
-		enum { ToneMax = 32 };
+		static constexpr int ToneMax = 32;
 		using CalcType = CalcT;
 		using TypedCommand = MmlCommand<CalcType>;
 		WavGenerator();
@@ -226,11 +240,10 @@ namespace MmlUtility
 
 		void setLoop(bool isLoop) { loopPlay_ = isLoop; }
 		void setDisableInfinityLoop(bool disableInfinityLoop) { disableInfinityLoop_ = disableInfinityLoop; }
-		bool isPlayEnd() const { return loopPlay_ == false && status_.commandIdx >= commands_.size(); }
+		bool isPlayEnd() const { return loopPlay_ == false && isEndCommand(); }
 		bool isEndCommand() const { return status_.commandIdx >= commands_.size(); }
 		size_t currentCommandIndex()const { return status_.commandIdx; }
 		size_t commandCount()const { return  commands_.size(); }
-
 
 	private:
 #ifdef USE_CALCED_SIN_TABLE
@@ -349,9 +362,10 @@ namespace MmlUtility
 	class MultiBankMml 
 	{
 	public:
+		using CalcType = CalcT;
 		inline GenerateMmlToPcmResult compile(const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank = 0, size_t currentCursor = 0);
 		inline void skipToCurrent();		
-		template<unsigned Channel, typename Type> inline std::vector<Type> generate(int samples);
+		template<unsigned Channel, typename Type> inline typename std::vector<Type> generate(int samples);
 		void setLoop(bool loop) {
 			for (auto& bank : bank_)
 				bank.setLoop(loop);
@@ -394,7 +408,9 @@ namespace MmlUtility
 	};
 
 	template<unsigned Channels, typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
-	bool generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank=0, size_t currentCursor=0);
+	inline bool generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank=0, size_t currentCursor=0);
 
 #include "WavGenerator.inl"
 }
+
+#endif

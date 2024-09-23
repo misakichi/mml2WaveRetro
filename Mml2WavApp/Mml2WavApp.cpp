@@ -1,4 +1,13 @@
-﻿
+﻿//
+//  Mml2WavApp.cpp
+//
+//  Copyright (c) 2023 misakichi kaminagare.
+//
+//  Distributed under the Boost Software License, Version 1.0.
+//  See accompanying file "LICENSE" or copy at
+//  http://www.boost.org/LICENSE_1_0.txt
+//
+
 // MFCApplication1.cpp : アプリケーションのクラス動作を定義します。
 //
 
@@ -42,10 +51,10 @@ CMml2WavApp theApp;
 
 BOOL CMml2WavApp::InitInstance()
 {
-	CFixFloat<int> flt32(0.5);
-	auto tmp = flt32 * 0.5;
-	float ftmp = tmp;
-	double dtmp = tmp;
+	//CFixFloat<int> flt32(0.5);
+	//auto tmp = flt32 * 0.5;
+	//float ftmp = tmp;
+	//double dtmp = tmp;
 
 
 	// アプリケーション マニフェストが visual スタイルを有効にするために、
