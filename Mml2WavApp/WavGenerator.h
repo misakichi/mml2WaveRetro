@@ -407,8 +407,8 @@ namespace MmlUtility
 		size_t currentCursor_;
 	};
 
-	template<unsigned Channels, typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
-	inline bool generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank=0, size_t currentCursor=0);
+	//template<unsigned Channels, typename CalcT = CFixFloat<int64_t, 16>, int Banks = 1>
+	//inline bool generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate = 48000, size_t currentBank=0, size_t currentCursor=0);
 
 #include "WavGenerator.inl"
 }

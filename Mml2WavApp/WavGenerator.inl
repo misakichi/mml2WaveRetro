@@ -1779,14 +1779,14 @@ inline std::vector<Type> MmlUtility::MultiBankMml<CalcT, Banks>::generate(int sa
 	return result;
 }
 
-template<unsigned Channels, typename CalcT, int Banks>
-bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
-{
-	MultiBankMml<CalcT, Banks> generator;
-	auto result = generator.compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);
-	if (result.result != ErrorReson::NoError)
-	{
-		dest = result;
-		return false;
-	}
-
+//template<unsigned Channels, typename CalcT, int Banks>
+//bool MmlUtility::generateMmlToPcm(GenerateMmlToPcmResult& dest, const std::string& prepareSharedMml, const std::array<std::string, Banks>& bankMml, int sampleRate, size_t currentBank, size_t currentCursor)
+//{
+//	MultiBankMml<CalcT, Banks> generator;
+//	auto result = generator.compile(prepareSharedMml, bankMml, sampleRate, currentBank, currentCursor);
+//	if (result.result != ErrorReson::NoError)
+//	{
+//		dest = result;
+//		return false;
+//	}
+//
