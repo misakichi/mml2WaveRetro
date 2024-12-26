@@ -414,6 +414,7 @@ std::shared_ptr<CMml2WavDlg::GeneratorWrapper> CMml2WavDlg::genWavReady(WavData&
 			errDetail[ErrorReson::IliegalMacroCharacter] = "マクロの文字が不正です";
 			errDetail[ErrorReson::CurrentPositionAfterInfinityLoop] = "現在位置が無限ループよりあとにある";
 			errDetail[ErrorReson::NotFountToneLoop] = "ループ内に音がなるコマンドがない";
+			errDetail[ErrorReson::IliegalSlurStart] = "スラー/タイの開始前音符がない";
 
 			errMsg += "\n";
 			errMsg += errDetail[result.result];

@@ -561,6 +561,8 @@ inline bool MmlUtility::WavGenerator<CalcT>::compileMml(const char* mml, std::ve
 		}
 		else if (c == '&')
 		{
+			if (lastToneIndex > addCommands->size())
+				return genError(ErrorReson::IliegalSlurStart);
 			slurFromCmdIndex = lastToneIndex;
 		}
 		else if (c == 'L')

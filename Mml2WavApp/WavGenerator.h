@@ -47,6 +47,7 @@ namespace MmlUtility
 		VolumeOutOfRange,//ボリューム値が範囲外
 		RequireNumberError, //数値が入るところなのに数値じゃない
 		IliegalCommandInTuplet,
+		IliegalSlurStart,//スラーの開始条件を満たしてない
 		TupletNoteOver,
 		IliegalTupletCloseOnNoTuplet,
 		NoteNothingTupletCloseOnNoTuplet,
